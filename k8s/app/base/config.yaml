@@ -1,0 +1,16 @@
+# Non-secret configuration. Secrets (pfd-secrets: DATABASE_URL, POSTGRES_PASSWORD, INGEST_API_KEYS,
+# ADMIN_API_KEY) are created by the deploy workflow from GitHub environment secrets and are never
+# stored in git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pfd-config
+data:
+  APP_ENV: dev
+  LOG_LEVEL: info
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4318
+  MAX_FUTURE_SKEW_SECONDS: "300"
+  PROCESSOR_BATCH_SIZE: "100"
+  PROCESSOR_POLL_INTERVAL_MS: "500"
+  PROCESSOR_LEASE_SECONDS: "60"
+  PROCESSOR_ARTIFICIAL_DELAY_MS: "0"

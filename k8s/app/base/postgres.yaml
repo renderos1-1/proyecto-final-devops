@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels: { app.kubernetes.io/name: postgres }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: postgres }
+  ports:
+    - name: pg
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: pfd }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: pfd }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70        # postgres user in the alpine image
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_DB
+              value: pfd
+            - name: POSTGRES_USER
+              value: pfd
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: pfd-secrets, key: POSTGRES_PASSWORD } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - { name: pg, containerPort: 5432 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec: { command: [pg_isready, -U, pfd, -d, pfd] }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec: { command: [pg_isready, -U, pfd, -d, pfd] }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - name: run
+          emptyDir: {}
+  # Data lives on a PersistentVolume (K3s local-path on the VM disk): survives Pod restarts and
+  # Deployment rollbacks (COM-03). It does NOT survive deleting the VM disk (documented limit).
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests: { storage: 5Gi }

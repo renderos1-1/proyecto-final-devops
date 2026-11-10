@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - config.yaml
+  - postgres.yaml
+  - ingest-api.yaml
+  - processor.yaml
+  - ingress.yaml
+  - ar-pull-refresher.yaml
+  - network-policies.yaml
+images:
+  - name: ingest-api
+    newName: us-central1-docker.pkg.dev/devops-esen/pfd/ingest-api
+    newTag: latest
+  - name: processor
+    newName: us-central1-docker.pkg.dev/devops-esen/pfd/processor
+    newTag: latest

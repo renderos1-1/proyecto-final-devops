@@ -1,0 +1,91 @@
+# One deployer identity per environment. The dev credential cannot touch prod, and neither
+# can read anything outside its namespace or modify RBAC. Tokens are stored as GitHub
+# *environment* secrets (KUBE_TOKEN), so a job only gets the token of its approved environment.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer-dev
+  namespace: ci
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer-prod
+  namespace: ci
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-dev-token
+  namespace: ci
+  annotations:
+    kubernetes.io/service-account.name: deployer-dev
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-prod-token
+  namespace: ci
+  annotations:
+    kubernetes.io/service-account.name: deployer-prod
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pfd-deployer
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets, services, persistentvolumeclaims, serviceaccounts]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments/rollback, deployments/scale, statefulsets/scale]
+    verbs: [update, patch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+    # escalation guard: K8s only lets it bind permissions it already holds
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors, prometheusrules]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: pfd-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pfd-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer-dev
+    namespace: ci
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: pfd-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pfd-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer-prod
+    namespace: ci
