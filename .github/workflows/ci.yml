@@ -117,10 +117,17 @@ jobs:
             find k8s/observability -name kustomization.yaml -printf '%h\n' | while read d; do
               kubectl kustomize "$d" | kubeconform -strict -summary -ignore-missing-schemas; done
           fi
-      - name: No secrets in manifests
+      - name: No secret values in manifests
+        # Only empty ServiceAccount-token placeholders are allowed (K8s fills them in-cluster).
         run: |
-          ! grep -rnE 'kind:\s*Secret' k8s --include=*.yaml | grep -v 'service-account-token' \
-            || { echo "Secret objects must not be committed (except SA token placeholders)"; exit 1; }
+          for dir in k8s/platform k8s/app/overlays/dev k8s/app/overlays/prod; do kubectl kustomize "$dir"; echo "---"; done \
+          | python3 -c '
+          import sys, yaml
+          bad = [d["metadata"]["name"] for d in yaml.safe_load_all(sys.stdin)
+                 if d and d.get("kind") == "Secret"
+                 and (d.get("type") != "kubernetes.io/service-account-token" or d.get("data") or d.get("stringData"))]
+          if bad: sys.exit(f"Secret objects with values must not be committed: {bad}")
+          print("ok: no secret values in rendered manifests")'
 
   terraform:
     name: terraform (fmt, validate, plan)
