@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+*.tfvars
+!*.tfvars.example
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+tfplan*
+# Misc
+.DS_Store
+/tmp/
