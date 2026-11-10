@@ -1,0 +1,78 @@
+# Build -> publish -> deploy dev -> (approval) -> deploy prod  (DEV-04, DEV-05)
+# Images are tagged with the full git SHA (immutable tags in Artifact Registry), so
+# commit <-> workflow run <-> running image are linked one-to-one.
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "k8s/app/**", ".github/workflows/release.yml", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [ingest-api, processor]
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/pfd/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        id: auth
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_DEPLOYER }}
+          token_format: access_token
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Login to Artifact Registry
+        run: echo "${{ steps.auth.outputs.access_token }}" | docker login -u oauth2accesstoken --password-stdin https://${{ vars.GCP_REGION }}-docker.pkg.dev
+      - name: Skip if this SHA was already published (immutable tags)
+        id: exists
+        run: |
+          if docker manifest inspect "$IMAGE:${{ github.sha }}" >/dev/null 2>&1; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        if: steps.exists.outputs.found != 'true'
+        with:
+          context: app
+          file: app/Dockerfile
+          push: true
+          build-args: |
+            APP=${{ matrix.app }}
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=${{ github.run_number }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            pfd.workflow-run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          provenance: true
+      - name: Summary
+        run: echo "- \`${{ matrix.app }}\` → \`$IMAGE:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-dev:
+    needs: publish
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-prod:
+    needs: deploy-dev
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+      sha: ${{ github.sha }}
+    secrets: inherit

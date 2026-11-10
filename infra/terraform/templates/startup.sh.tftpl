@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# K3s node bootstrap. Rendered by Terraform into the VM's startup-script metadata.
+# Idempotent: runs on every boot; installs K3s only if missing or at a different version.
+# Cluster add-ons (NGINX Ingress Controller, cert-manager, ClusterIssuer) are declared as K3s
+# auto-deploy manifests, so K3s reconciles them on its own.
+set -euo pipefail
+exec > >(tee -a /var/log/k3s-bootstrap.log | logger -t k3s-bootstrap) 2>&1
+echo "bootstrap start $(date -Is)"
+
+K3S_VERSION="${k3s_version}"
+
+mkdir -p /etc/rancher/k3s /var/lib/rancher/k3s/server/manifests
+
+cat > /etc/rancher/k3s/config.yaml <<'EOF'
+write-kubeconfig-mode: "0600"
+disable:
+  - traefik            # replaced by the F5 NGINX Ingress Controller
+secrets-encryption: true   # Secrets encrypted at rest in the datastore
+kube-apiserver-arg:
+  - "anonymous-auth=false"
+kubelet-arg:
+  - "system-reserved=cpu=200m,memory=512Mi"
+  - "eviction-hard=memory.available<300Mi"
+EOF
+
+if ! command -v k3s >/dev/null 2>&1 || ! k3s --version | grep -qF "$K3S_VERSION"; then
+  curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" sh -s - server
+fi
+
+# ---- add-ons (HelmChart CRD is built into K3s) ------------------------------------------
+cat > /var/lib/rancher/k3s/server/manifests/10-cert-manager.yaml <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  repo: https://charts.jetstack.io
+  chart: cert-manager
+  version: "${cert_manager_chart_version}"
+  targetNamespace: cert-manager
+  valuesContent: |-
+    crds:
+      enabled: true
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { memory: 192Mi }
+EOF
+
+cat > /var/lib/rancher/k3s/server/manifests/20-nginx-ingress.yaml <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: nginx-ingress
+  namespace: kube-system
+spec:
+  repo: https://helm.nginx.com/stable
+  chart: nginx-ingress
+  version: "${nginx_ingress_chart_version}"
+  targetNamespace: ingress-nginx
+  valuesContent: |-
+    controller:
+      ingressClass:
+        name: nginx
+        create: true
+        setAsDefaultIngress: true
+      service:
+        type: LoadBalancer        # K3s ServiceLB binds 80/443 on the node's IP
+        externalTrafficPolicy: Local
+      enableSnippets: false
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+    prometheus:
+      create: true
+      port: 9113
+EOF
+
+cat > /var/lib/rancher/k3s/server/manifests/30-cluster-issuer.yaml <<'EOF'
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: "${acme_email}"
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+EOF
+
+# Wait for the node to be Ready (visible in the serial console / bootstrap log).
+for i in $(seq 1 60); do
+  if k3s kubectl get nodes 2>/dev/null | grep -q " Ready"; then
+    k3s kubectl get nodes -o wide
+    break
+  fi
+  sleep 5
+done
+
+echo "bootstrap done $(date -Is)"
