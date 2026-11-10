@@ -1,0 +1,154 @@
+# Deploys an already-published image SHA to one environment. Called by `release`, or run
+# manually (workflow_dispatch) to promote or roll back to any previously published SHA.
+#
+# Steps: secrets -> supporting objects -> image-pull secret -> postgres -> migrations (Job)
+#        -> app rollout -> automatic `rollout undo` if the new pods never become Ready
+#        -> smoke test that the public /version reports the expected SHA.
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment: { type: string, required: true }
+      sha: { type: string, required: true }
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+      sha:
+        description: "Full git SHA of a published image"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://${{ steps.vars.outputs.host }}/version
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      NS: pfd-${{ inputs.environment }}
+      SHA: ${{ inputs.sha }}
+      REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/pfd
+      KUBECONFIG: ${{ github.workspace }}/.kubeconfig
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}   # manifests from the same commit as the image
+
+      - id: vars
+        run: |
+          host=$(grep -m1 -oE 'value: [a-z0-9.-]+\.sslip\.io' k8s/app/overlays/${{ inputs.environment }}/kustomization.yaml | awk '{print $2}')
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_DEPLOYER }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Open IAP tunnel to the K3s API (port 6443 is not public)
+        run: |
+          gcloud compute start-iap-tunnel pfd-k3s 6443 --local-host-port=localhost:16443 \
+            --zone ${{ vars.GCP_ZONE }} --project ${{ vars.GCP_PROJECT_ID }} > tunnel.log 2>&1 &
+          for i in $(seq 1 30); do nc -z localhost 16443 && break; sleep 1; done
+          nc -z localhost 16443 || { cat tunnel.log; exit 1; }
+
+      - name: Kubeconfig (namespaced deployer token for this environment only)
+        env:
+          KUBE_CA: ${{ secrets.KUBE_CA }}
+          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+        run: |
+          umask 077
+          echo "$KUBE_CA" | base64 -d > ca.crt
+          kubectl config set-cluster k3s --server=https://127.0.0.1:16443 --certificate-authority=ca.crt --embed-certs
+          kubectl config set-credentials deployer --token="$KUBE_TOKEN"
+          kubectl config set-context deploy --cluster=k3s --user=deployer --namespace="$NS"
+          kubectl config use-context deploy
+          rm ca.crt
+          kubectl auth can-i create deployments -n "$NS"
+
+      - name: Sync application secrets from GitHub environment secrets
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          INGEST_API_KEYS: ${{ secrets.INGEST_API_KEYS }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+        run: |
+          kubectl create secret generic pfd-secrets \
+            --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            --from-literal=DATABASE_URL="postgres://pfd:${POSTGRES_PASSWORD}@postgres:5432/pfd" \
+            --from-literal=INGEST_API_KEYS="$INGEST_API_KEYS" \
+            --from-literal=ADMIN_API_KEY="$ADMIN_API_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Set image tags
+        working-directory: k8s/app/overlays/${{ inputs.environment }}
+        run: |
+          kustomize edit set image ingest-api=$REGISTRY/ingest-api:$SHA processor=$REGISTRY/processor:$SHA 2>/dev/null \
+            || { curl -sSfL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s -- 5.7.1 /usr/local/bin >/dev/null; \
+                 kustomize edit set image ingest-api=$REGISTRY/ingest-api:$SHA processor=$REGISTRY/processor:$SHA; }
+          kubectl kustomize . > /tmp/rendered.yaml
+          grep -E 'image: .*pfd/' /tmp/rendered.yaml | sort -u
+
+      - name: Apply supporting objects (everything except the app Deployments)
+        run: kubectl apply -f /tmp/rendered.yaml -l 'app.kubernetes.io/name notin (ingest-api,processor)'
+
+      - name: Refresh image-pull secret
+        run: |
+          kubectl delete job ar-pull-refresh-now --ignore-not-found
+          kubectl create job ar-pull-refresh-now --from=cronjob/ar-pull-refresher
+          kubectl wait --for=condition=complete job/ar-pull-refresh-now --timeout=120s
+
+      - name: Wait for postgres
+        run: kubectl rollout status statefulset/postgres --timeout=180s
+
+      - name: Run migrations (forward-compatible)
+        run: |
+          kubectl delete job migrate --ignore-not-found --wait=true
+          sed "s#image: ingest-api#image: $REGISTRY/ingest-api:$SHA#" k8s/app/base/migrate-job.yaml | kubectl apply -f -
+          if ! kubectl wait --for=condition=complete job/migrate --timeout=180s; then
+            kubectl logs job/migrate --all-containers || true
+            exit 1
+          fi
+          kubectl logs job/migrate --tail=20
+
+      - name: Roll out the application
+        run: |
+          kubectl apply -f /tmp/rendered.yaml -l 'app.kubernetes.io/name in (ingest-api,processor)'
+          for d in ingest-api processor; do
+            kubectl annotate deployment/$d kubernetes.io/change-cause="sha=$SHA run=${{ github.run_id }}" --overwrite
+          done
+
+      - name: Wait for rollout, undo automatically on failure (DEV-12)
+        run: |
+          ok=true
+          for d in ingest-api processor; do
+            kubectl rollout status deployment/$d --timeout=180s || ok=false
+          done
+          if [ "$ok" != true ]; then
+            echo "::error::Rollout failed; reverting to previous ReplicaSet"
+            kubectl get pods -o wide; kubectl get events --sort-by=.lastTimestamp | tail -30
+            for d in ingest-api processor; do kubectl rollout undo deployment/$d; done
+            for d in ingest-api processor; do kubectl rollout status deployment/$d --timeout=180s; done
+            exit 1
+          fi
+
+      - name: Smoke test public endpoint
+        run: |
+          host=${{ steps.vars.outputs.host }}
+          for i in $(seq 1 30); do
+            got=$(curl -sf "https://$host/version" | sed -n 's/.*"gitSha":"\([^"]*\)".*/\1/p') && [ "$got" = "$SHA" ] && break
+            sleep 5
+          done
+          echo "expected=$SHA got=${got:-none}"
+          [ "$got" = "$SHA" ]
+          echo "Deployed \`$SHA\` to **${{ inputs.environment }}** → https://$host" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,28 @@
+# Logical environments (spec 5.4): separate namespaces, configs, secrets and data on one cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pfd-dev
+  labels:
+    pfd/env: dev
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pfd-prod
+  labels:
+    pfd/env: prod
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci

@@ -1,0 +1,83 @@
+# Keyless image pulls from Artifact Registry: every 30 min, refresh a docker-registry Secret
+# with a short-lived (1h) OAuth token from the VM's service account (metadata server).
+# The VM SA only has artifactregistry.reader on the repo. No JSON keys anywhere.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ar-pull-refresher
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ar-pull-refresher
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [ar-pull]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ar-pull-refresher
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ar-pull-refresher
+subjects:
+  - kind: ServiceAccount
+    name: ar-pull-refresher
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ar-pull-refresher
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        spec:
+          serviceAccountName: ar-pull-refresher
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: refresh
+              image: alpine/k8s:1.37.2
+              command: [/bin/sh, -ec]
+              args:
+                - |
+                  TOKEN=$(curl -sf -H 'Metadata-Flavor: Google' \
+                    http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token \
+                    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+                  test -n "$TOKEN"
+                  kubectl create secret docker-registry ar-pull \
+                    --docker-server=us-central1-docker.pkg.dev \
+                    --docker-username=oauth2accesstoken \
+                    --docker-password="$TOKEN" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+                  echo "ar-pull refreshed at $(date -u +%FT%TZ)"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              env:
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { memory: 128Mi }
+          volumes:
+            - name: tmp
+              emptyDir: {}

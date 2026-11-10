@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "monorepo": true,
+  "root": "apps/ingest-api",
+  "sourceRoot": "apps/ingest-api",
+  "projects": {
+    "ingest-api": { "type": "application", "root": "apps/ingest-api", "sourceRoot": "apps/ingest-api", "entryFile": "main" },
+    "processor": { "type": "application", "root": "apps/processor", "sourceRoot": "apps/processor", "entryFile": "main" },
+    "common": { "type": "library", "root": "libs/common", "sourceRoot": "libs/common" }
+  }
+}
