@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: pfd-prod
+resources:
+  - ../../base
+labels:
+  - pairs:
+      pfd/env: prod
+    includeSelectors: false
+    includeTemplates: true
+patches:
+  - target: { kind: ConfigMap, name: pfd-config }
+    patch: |-
+      - { op: replace, path: /data/APP_ENV, value: prod }
+  - target: { kind: Ingress, name: ingest-api }
+    patch: |-
+      - { op: replace, path: /spec/tls/0/hosts/0, value: api.136-71-37-219.sslip.io }
+      - { op: replace, path: /spec/rules/0/host, value: api.136-71-37-219.sslip.io }
+  - target: { kind: Deployment, name: ingest-api }
+    patch: |-
+      - { op: replace, path: /spec/replicas, value: 2 }
+# Image tags are set by the deploy workflow (kustomize edit set image ...=<git-sha>).
+# The tag committed here is irrelevant; what runs is visible with:
+#   kubectl -n pfd-prod get deploy -o jsonpath='{..image}'
+images:
+  - name: ingest-api
+    newName: us-central1-docker.pkg.dev/devops-esen/pfd/ingest-api
+    newTag: latest
+  - name: processor
+    newName: us-central1-docker.pkg.dev/devops-esen/pfd/processor
+    newTag: latest

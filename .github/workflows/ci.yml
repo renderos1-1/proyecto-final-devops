@@ -1,0 +1,170 @@
+# Pull-request validation (DEV-03, DEV-08). All jobs are required status checks on `main`;
+# a failure blocks the merge. Third-party actions are pinned to commit SHAs.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  app:
+    name: app (lint, unit, e2e)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: pfd_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/pfd_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            tools/generator/package-lock.json
+      - name: app
+        working-directory: app
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+          npm test
+          npm run migrate
+          npm run test:e2e
+      - name: generator
+        if: hashFiles('tools/generator/package.json') != ''
+        working-directory: tools/generator
+        run: |
+          npm ci
+          npm test --if-present
+          npm run build --if-present
+
+  images:
+    name: images (build + scan)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [ingest-api, processor]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: app
+          file: app/Dockerfile
+          build-args: |
+            APP=${{ matrix.app }}
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=ci
+          tags: pfd/${{ matrix.app }}:ci
+          load: true
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+      - name: Install trivy (checksum-verified binary)
+        run: |
+          curl -sSfL -o trivy.tgz https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz
+          echo "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf  trivy.tgz" | sha256sum -c -
+          tar -xzf trivy.tgz trivy && sudo mv trivy /usr/local/bin/
+      - name: Scan image (fail on fixable CRITICAL)
+        run: |
+          trivy image --no-progress --severity HIGH,CRITICAL pfd/${{ matrix.app }}:ci
+          trivy image --no-progress --exit-code 1 --ignore-unfixed --severity CRITICAL pfd/${{ matrix.app }}:ci
+      - name: Image runs as non-root
+        run: |
+          user=$(docker image inspect pfd/${{ matrix.app }}:ci --format '{{.Config.User}}')
+          echo "image user: $user"; test -n "$user" && test "$user" != "root" && test "$user" != "0"
+
+  k8s:
+    name: k8s manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install kubeconform
+        run: |
+          curl -sSfL -o kc.tgz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  kc.tgz" | sha256sum -c -
+          tar -xzf kc.tgz kubeconform && sudo mv kubeconform /usr/local/bin/
+      - name: Render and validate
+        run: |
+          set -euo pipefail
+          for dir in k8s/platform k8s/app/overlays/dev k8s/app/overlays/prod; do
+            echo "::group::$dir"
+            kubectl kustomize "$dir" | kubeconform -strict -summary -ignore-missing-schemas \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+            echo "::endgroup::"
+          done
+          if [ -d k8s/observability ]; then
+            find k8s/observability -name kustomization.yaml -printf '%h\n' | while read d; do
+              kubectl kustomize "$d" | kubeconform -strict -summary -ignore-missing-schemas; done
+          fi
+      - name: No secret values in manifests
+        # Only empty ServiceAccount-token placeholders are allowed (K8s fills them in-cluster).
+        run: |
+          for dir in k8s/platform k8s/app/overlays/dev k8s/app/overlays/prod; do kubectl kustomize "$dir"; echo "---"; done \
+          | python3 -c '
+          import sys, yaml
+          bad = [d["metadata"]["name"] for d in yaml.safe_load_all(sys.stdin)
+                 if d and d.get("kind") == "Secret"
+                 and (d.get("type") != "kubernetes.io/service-account-token" or d.get("data") or d.get("stringData"))]
+          if bad: sys.exit(f"Secret objects with values must not be committed: {bad}")
+          print("ok: no secret values in rendered manifests")'
+
+  terraform:
+    name: terraform (fmt, validate, plan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # OIDC -> GCP Workload Identity Federation
+      pull-requests: write   # post the plan as a PR comment
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive ../
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_TF_PLAN }}   # read-only identity
+      - run: terraform init -input=false
+      - run: terraform validate
+      - name: Plan (read-only SA, never applied from a PR)
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -lock-timeout=60s -detailed-exitcode -out=tfplan | tee plan.txt || ec=$?
+          ec=${ec:-0}; echo "exitcode=$ec" >> "$GITHUB_OUTPUT"
+          [ "$ec" = "1" ] && exit 1 || exit 0
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8');
+            const summary = (plan.match(/^(Plan:.*|No changes\..*)$/m) || ['(see log)'])[0];
+            const body = `### Terraform plan\n**${summary}**\n<details><summary>Full plan</summary>\n\n\`\`\`\n${plan.slice(-60000)}\n\`\`\`\n</details>\n\nCommit: ${context.sha}`;
+            await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });

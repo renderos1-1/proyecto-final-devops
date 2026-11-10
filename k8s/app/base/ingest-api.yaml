@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest-api
+  labels: { app.kubernetes.io/name: ingest-api, app.kubernetes.io/part-of: pfd }
+spec:
+  selector: { app.kubernetes.io/name: ingest-api }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-api
+  labels: { app.kubernetes.io/name: ingest-api, app.kubernetes.io/part-of: pfd }
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10   # needed for `kubectl rollout undo` (DEV-12)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # new pod must be Ready before old one goes
+  selector:
+    matchLabels: { app.kubernetes.io/name: ingest-api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ingest-api, app.kubernetes.io/part-of: pfd }
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{ name: ar-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ingest-api
+          image: ingest-api   # replaced by kustomize `images` with the git-SHA tag
+          ports:
+            - { name: http, containerPort: 3000 }
+          envFrom:
+            - configMapRef: { name: pfd-config }
+          env:
+            - { name: PORT, value: "3000" }
+            - { name: OTEL_SERVICE_NAME, value: ingest-api }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: pfd-secrets, key: DATABASE_URL } }
+            - name: INGEST_API_KEYS
+              valueFrom: { secretKeyRef: { name: pfd-secrets, key: INGEST_API_KEYS } }
+            - name: ADMIN_API_KEY
+              valueFrom: { secretKeyRef: { name: pfd-secrets, key: ADMIN_API_KEY } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # startup: allow up to 60s for Nest bootstrap before liveness applies
+          startupProbe:
+            httpGet: { path: /healthz/live, port: http }
+            periodSeconds: 3
+            failureThreshold: 20
+          # readiness: DB reachable -> receive traffic; failing removes the pod from the Service endpoints
+          readinessProbe:
+            httpGet: { path: /healthz/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # liveness: process responsive; does NOT check DB (a DB outage must not restart-loop the API)
+          livenessProbe:
+            httpGet: { path: /healthz/live, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 160Mi }
+            limits: { memory: 384Mi }   # no CPU limit: avoid throttling; requests guarantee share
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
