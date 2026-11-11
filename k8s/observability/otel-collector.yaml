@@ -1,0 +1,62 @@
+# One collector per node: receives OTLP traces from the apps and tails container logs.
+#   traces: apps --OTLP--> collector --> Tempo
+#   logs:   /var/log/pods (filelog) --> collector (k8s attributes) --> Loki (native OTLP endpoint)
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: otel-collector
+  namespace: kube-system
+spec:
+  repo: https://open-telemetry.github.io/opentelemetry-helm-charts
+  chart: opentelemetry-collector
+  version: "0.178.3"
+  targetNamespace: observability
+  valuesContent: |-
+    fullnameOverride: otel-collector
+    mode: daemonset
+    image:
+      repository: otel/opentelemetry-collector-contrib
+    presets:
+      logsCollection:
+        enabled: true
+        includeCollectorLogs: false
+      kubernetesAttributes:
+        enabled: true
+    service:
+      enabled: true
+    resources:
+      requests: { cpu: 25m, memory: 96Mi }
+      limits: { memory: 320Mi }
+    config:
+      processors:
+        memory_limiter:
+          check_interval: 5s
+          limit_percentage: 80
+          spike_limit_percentage: 25
+        batch: {}
+        # Only ship logs from our namespaces to keep Loki small.
+        filter/namespaces:
+          logs:
+            log_record:
+              - 'resource.attributes["k8s.namespace.name"] != "pfd-dev" and resource.attributes["k8s.namespace.name"] != "pfd-prod" and resource.attributes["k8s.namespace.name"] != "ingress-nginx"'
+        resource/env:
+          attributes:
+            - key: service.name
+              from_attribute: k8s.container.name
+              action: insert
+      exporters:
+        otlphttp/tempo:
+          endpoint: http://tempo.observability.svc:4318
+        otlphttp/loki:
+          endpoint: http://loki.observability.svc:3100/otlp
+      service:
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [memory_limiter, batch]
+            exporters: [otlphttp/tempo]
+          logs:
+            receivers: [filelog]
+            processors: [memory_limiter, k8sattributes, filter/namespaces, resource/env, batch]
+            exporters: [otlphttp/loki]
+          metrics: null
