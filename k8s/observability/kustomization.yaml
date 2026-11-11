@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Cluster-admin applies this (kubectl apply -k k8s/observability). HelmChart objects live in
+# kube-system; the K3s Helm controller installs each chart into the `observability` namespace.
+resources:
+  - kube-prometheus-stack.yaml
+  - loki.yaml
+  - tempo.yaml
+  - otel-collector.yaml

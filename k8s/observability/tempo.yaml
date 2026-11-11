@@ -1,0 +1,36 @@
+# Tempo single binary. The grafana/tempo chart is deprecated; maintained chart is grafana-community/tempo.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: tempo
+  namespace: kube-system
+spec:
+  repo: https://grafana-community.github.io/helm-charts
+  chart: tempo
+  version: "3.2.1"
+  targetNamespace: observability
+  valuesContent: |-
+    fullnameOverride: tempo
+    tempo:
+      reportingEnabled: false
+      retention: 72h
+      resources:
+        requests: { cpu: 25m, memory: 128Mi }
+        limits: { memory: 512Mi }
+      receivers:
+        otlp:
+          protocols:
+            grpc: { endpoint: "0.0.0.0:4317" }
+            http: { endpoint: "0.0.0.0:4318" }
+      # span metrics + service graph -> Prometheus (powers Grafana's service map)
+      metricsGenerator:
+        enabled: true
+        remoteWriteUrl: http://kps-prometheus.observability.svc:9090/api/v1/write
+      overrides:
+        defaults:
+          metrics_generator:
+            processors: [service-graphs, span-metrics]
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClassName: local-path

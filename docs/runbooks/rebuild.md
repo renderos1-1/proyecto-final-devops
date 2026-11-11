@@ -70,7 +70,9 @@ sed -i 's#127.0.0.1:6443#127.0.0.1:16443#' ~/.kube/pfd-k3s.yaml && chmod 600 ~/.
 scripts/vm.sh tunnel &                         # IAP tunnel -> localhost:16443
 export KUBECONFIG=~/.kube/pfd-k3s.yaml
 kubectl apply -k k8s/platform                  # namespaces + per-environment deployer RBAC
-kubectl apply -k k8s/observability             # monitoring stack (see docs/observability.md)
+kubectl -n observability create secret generic grafana-admin \
+  --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -base64 18)"
+kubectl apply -k k8s/observability             # Prometheus/Alertmanager/Grafana, Loki, Tempo, OTel Collector
 ```
 
 ## 5. Secrets into GitHub environments (manual, after each VM rebuild)

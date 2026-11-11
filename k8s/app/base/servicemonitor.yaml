@@ -1,0 +1,15 @@
+# Prometheus scrapes /metrics of ingest-api and processor every 15s. The namespace becomes the
+# `namespace` label (pfd-dev / pfd-prod), which is how dashboards and SLOs separate environments.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pfd-apps
+  labels: { app.kubernetes.io/part-of: pfd }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/part-of: pfd }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

@@ -1,0 +1,150 @@
+# Prometheus + Alertmanager + Grafana + node-exporter + kube-state-metrics.
+# Installed by the K3s Helm controller from this versioned object (kubectl apply -k k8s/observability).
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kube-prometheus-stack
+  namespace: kube-system
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  version: "93.1.2"
+  targetNamespace: observability
+  valuesContent: |-
+    fullnameOverride: kps
+    # K3s embeds these components in one process; their default scrape targets don't exist.
+    kubeEtcd: { enabled: false }
+    kubeControllerManager: { enabled: false }
+    kubeScheduler: { enabled: false }
+    kubeProxy: { enabled: false }
+    defaultRules:
+      rules:
+        etcd: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        kubeControllerManager: false
+        kubeProxy: false
+    prometheus:
+      prometheusSpec:
+        scrapeInterval: 15s
+        evaluationInterval: 15s
+        retention: 7d
+        retentionSize: 6GB
+        enableRemoteWriteReceiver: true      # Tempo metrics-generator writes span metrics here
+        # Pick up ServiceMonitors/PrometheusRules from any namespace (app namespaces included).
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        resources:
+          requests: { cpu: 150m, memory: 512Mi }
+          limits: { memory: 1536Mi }
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: [ReadWriteOnce]
+              resources: { requests: { storage: 8Gi } }
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { memory: 128Mi }
+      config:
+        route:
+          receiver: default
+          group_by: [alertname, namespace]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          routes:
+            - matchers: [ 'alertname = "Watchdog"' ]
+              receiver: "null"
+            - matchers: [ 'alertname = "InfoInhibitor"' ]
+              receiver: "null"
+        receivers:
+          - name: "null"
+          - name: default   # visible in Alertmanager/Grafana; add email/webhook here if needed
+    kube-state-metrics:
+      resources:
+        requests: { cpu: 10m, memory: 48Mi }
+        limits: { memory: 128Mi }
+    prometheus-node-exporter:
+      resources:
+        requests: { cpu: 10m, memory: 24Mi }
+        limits: { memory: 64Mi }
+    prometheusOperator:
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { memory: 192Mi }
+    grafana:
+      fullnameOverride: grafana
+      admin:
+        existingSecret: grafana-admin   # created out-of-band (docs/observability.md); never in git
+        userKey: admin-user
+        passwordKey: admin-password
+      persistence: { enabled: false }   # stateless: datasources and dashboards are provisioned from git
+      resources:
+        requests: { cpu: 25m, memory: 128Mi }
+        limits: { memory: 384Mi }
+      grafana.ini:
+        server:
+          root_url: https://grafana.136-71-37-219.sslip.io
+        users:
+          allow_sign_up: false
+        auth.anonymous:
+          enabled: false
+        analytics:
+          reporting_enabled: false
+          check_for_updates: false
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt
+          acme.cert-manager.io/http01-edit-in-place: "true"
+        hosts: [grafana.136-71-37-219.sslip.io]
+        tls:
+          - secretName: grafana-tls
+            hosts: [grafana.136-71-37-219.sslip.io]
+      sidecar:
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          searchNamespace: observability
+          folderAnnotation: grafana_folder
+          provider:
+            foldersFromFilesStructure: true
+      additionalDataSources:
+        - name: Loki
+          uid: loki
+          type: loki
+          url: http://loki.observability.svc:3100
+          jsonData:
+            derivedFields:
+              - name: trace_id
+                matcherType: label          # OTLP-ingested logs carry trace_id as structured metadata
+                matcherRegex: trace_id
+                datasourceUid: tempo
+                url: '$${__value.raw}'
+              - name: trace_id_json
+                matcherRegex: '"trace_id":"(\w+)"'
+                datasourceUid: tempo
+                url: '$${__value.raw}'
+        - name: Tempo
+          uid: tempo
+          type: tempo
+          url: http://tempo.observability.svc:3200
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: -5m
+              spanEndTimeShift: 5m
+              filterByTraceID: true
+              customQuery: true
+              query: '{service_name="$${__span.tags["service.name"]}"} | trace_id="$${__span.traceId}"'
+            tracesToMetrics:
+              datasourceUid: prometheus
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
