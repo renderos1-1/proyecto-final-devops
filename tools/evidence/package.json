@@ -1,0 +1,13 @@
+{
+  "name": "pfd-evidence",
+  "private": true,
+  "type": "module",
+  "description": "Screenshots of Grafana panels and terminal logs for docs/evidence (uses the system Chrome)",
+  "scripts": {
+    "grafana": "node grafana-shot.mjs",
+    "terminal": "node terminal-shot.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}

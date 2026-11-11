@@ -40,7 +40,7 @@ def target(expr: str, legend: str = "", ref: str = "A", instant: bool = False) -
     return t
 
 
-def ts(title, desc, targets, unit, x, w, h=8, thresholds=None, stack=False, min0=True):
+def ts(title, desc, targets, unit, x, w, h=8, thresholds=None, stack=False, min0=True, soft_max=None):
     p = {
         "type": "timeseries", "id": nid(), "title": title, "description": desc, "datasource": PROM,
         "gridPos": {"h": h, "w": w, "x": x, "y": _y},
@@ -48,7 +48,7 @@ def ts(title, desc, targets, unit, x, w, h=8, thresholds=None, stack=False, min0
         "fieldConfig": {"defaults": {
             "unit": unit,
             "min": 0 if min0 else None,
-            "custom": {"lineWidth": 2, "fillOpacity": 15 if stack else 5, "showPoints": "never",
+            "custom": {"axisSoftMax": soft_max, "lineWidth": 2, "fillOpacity": 15 if stack else 5, "showPoints": "never",
                        "stacking": {"mode": "normal" if stack else "none"},
                        "thresholdsStyle": {"mode": "dashed" if thresholds else "off"}},
             "thresholds": {"mode": "absolute", "steps": thresholds or [{"color": "green", "value": None}]},
@@ -109,7 +109,7 @@ ts("HTTP responses by status (ingestion)", "Requests/s to /v1/events* by status 
    "reqps", 0, 12, stack=True)
 ts("SLO burn: availability error ratio", "Error ratio over 5m and 1h. Alert fires when both exceed 14.4 × 0.5% = 7.2% (dashed).",
    [(f"pfd:sli_availability:error_ratio_rate5m{{{NS}}}", "5m", "A"), (f"pfd:sli_availability:error_ratio_rate1h{{{NS}}}", "1h", "B")],
-   "percentunit", 12, 12, thresholds=[{"color": "green", "value": None}, {"color": "red", "value": 0.072}])
+   "percentunit", 12, 12, thresholds=[{"color": "green", "value": None}, {"color": "red", "value": 0.072}], soft_max=0.25)
 advance(8)
 
 # ------------------------------------------------------------------ Q2
@@ -129,7 +129,7 @@ ts("Wait vs processing time (p95)", "Lag = receive→processed (queue wait + pro
 advance(8)
 ts("SLO burn: freshness (late events ratio)", "Share of events processed later than 5 s, over 5m and 1h. Alert threshold 14.4 × 1% = 14.4% (dashed).",
    [(f"pfd:sli_freshness:error_ratio_rate5m{{{NS}}}", "5m", "A"), (f"pfd:sli_freshness:error_ratio_rate1h{{{NS}}}", "1h", "B")],
-   "percentunit", 0, 12, thresholds=[{"color": "green", "value": None}, {"color": "red", "value": 0.144}])
+   "percentunit", 0, 12, thresholds=[{"color": "green", "value": None}, {"color": "red", "value": 0.144}], soft_max=0.25)
 ts("Business alerts raised", "Threshold violations detected by the processor (events/s by metric).",
    [(f"sum by (metric) (rate(business_alerts_total{{{NS}}}[1m]))", "{{metric}}")], "reqps", 12, 12, stack=True)
 advance(8)
@@ -147,10 +147,10 @@ ts("Memory working set per pod vs limit", "Working-set bytes per pod (what the O
 ts("Node CPU and memory utilisation", "Whole VM (all namespaces, including observability).",
    [('1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))', "CPU", "A"),
     ("1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes", "memory", "B")],
-   "percentunit", 16, 8, thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 0.8}])
+   "percentunit", 16, 8, thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 0.8}], soft_max=1)
 advance(8)
 ts("Pod restarts", "Container restarts in the namespace (probe failures, OOM kills, crashes).",
-   [(f"sum by (pod) (increase(kube_pod_container_status_restarts_total{{{NS}}}[10m]))", "{{pod}}")], "short", 0, 8)
+   [(f'sum by (pod) (increase(kube_pod_container_status_restarts_total{{{NS},pod!~"ar-pull.*|migrate.*"}}[10m]))', "{{pod}}")], "short", 0, 8)
 panels.append({
     "type": "logs", "id": nid(), "title": "Warnings and errors (logs)", "datasource": LOKI,
     "description": "Structured logs from Loki; expand a line and click trace_id to open the trace in Tempo.",

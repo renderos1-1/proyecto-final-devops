@@ -1,0 +1,2 @@
+traceID=2e3d67463abb816cd70a0b87cc856042 root=processor/process_batch duration=7947ms
+Grafana: Explore -> Tempo -> paste the traceID

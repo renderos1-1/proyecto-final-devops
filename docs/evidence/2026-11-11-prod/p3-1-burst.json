@@ -1,0 +1,21 @@
+{
+  "command": "burst",
+  "seed": "3101",
+  "dryRun": false,
+  "summary": {
+    "sent": 1000,
+    "accepted": 1000,
+    "duplicate": 0,
+    "rejected": 0,
+    "httpErrors": 0,
+    "latencyMs": {
+      "p50": 274.5154700000003,
+      "p95": 572.8905160000004,
+      "p99": 808.298217
+    },
+    "achievedRate": 65.6257133084368,
+    "durationSeconds": 15.237929609999998
+  },
+  "expected": {},
+  "verification": {}
+}

@@ -363,6 +363,7 @@
           "unit": "reqps",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 15,
             "showPoints": "never",
@@ -431,6 +432,7 @@
           "unit": "reqps",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 15,
             "showPoints": "never",
@@ -517,6 +519,7 @@
           "unit": "s",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -589,6 +592,7 @@
           "unit": "reqps",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 15,
             "showPoints": "never",
@@ -666,6 +670,7 @@
           "unit": "percentunit",
           "min": 0,
           "custom": {
+            "axisSoftMax": 0.25,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -768,6 +773,7 @@
           "unit": "reqps",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -836,6 +842,7 @@
           "unit": "short",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -917,6 +924,7 @@
           "unit": "s",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -998,6 +1006,7 @@
           "unit": "percentunit",
           "min": 0,
           "custom": {
+            "axisSoftMax": 0.25,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -1070,6 +1079,7 @@
           "unit": "reqps",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 15,
             "showPoints": "never",
@@ -1159,6 +1169,7 @@
           "unit": "cores",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -1236,6 +1247,7 @@
           "unit": "bytes",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -1313,6 +1325,7 @@
           "unit": "percentunit",
           "min": 0,
           "custom": {
+            "axisSoftMax": 1,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
@@ -1375,7 +1388,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\"}[10m]))",
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\",pod!~\"ar-pull.*|migrate.*\"}[10m]))",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -1385,6 +1398,7 @@
           "unit": "short",
           "min": 0,
           "custom": {
+            "axisSoftMax": null,
             "lineWidth": 2,
             "fillOpacity": 5,
             "showPoints": "never",
