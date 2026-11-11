@@ -90,7 +90,7 @@ panels.append({
         target(_vol.format(by="", ns=NS, extra=',outcome="duplicate"'), "Duplicates", "C", instant=True),
         target(_vol.format(by="", ns=NS, extra=',outcome="rejected"'), "Rejected", "D", instant=True),
     ],
-    "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0",
+    "fieldConfig": {"defaults": {"unit": "locale", "decimals": 0, "noValue": "0",
                                  "thresholds": {"mode": "absolute", "steps": [{"color": "text", "value": None}]}},
                     "overrides": [
                         {"matcher": {"id": "byName", "options": "Total received"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#151515"}}]},
