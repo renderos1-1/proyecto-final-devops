@@ -1,0 +1,21 @@
+{
+  "command": "sustained",
+  "seed": "3401",
+  "dryRun": false,
+  "summary": {
+    "sent": 1200,
+    "accepted": 1200,
+    "duplicate": 0,
+    "rejected": 0,
+    "httpErrors": 0,
+    "latencyMs": {
+      "p50": 94.95485800000006,
+      "p95": 191.53884299999845,
+      "p99": 329.535445
+    },
+    "achievedRate": 19.98522627055478,
+    "durationSeconds": 60.044353951999994
+  },
+  "expected": {},
+  "verification": {}
+}
