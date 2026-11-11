@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escenario 3 · Ingesta y análisis de eventos</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+  --blue:#2563eb; --blue-50:#eff6ff; --green:#16a34a; --green-50:#f0fdf4; --orange:#ea580c; --orange-50:#fff7ed;
+  --red:#dc2626; --red-50:#fef2f2; --violet:#7c3aed; --violet-50:#f5f3ff; --navy:#0b1020;
+  --mono:"JetBrains Mono","DejaVu Sans Mono",ui-monospace,monospace;
+  --sans:Inter,"Segoe UI",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b1020;font-family:var(--sans);color:var(--ink);overflow:hidden}
+/* ---------- stage: fixed 1600x900, scaled to fit ---------- */
+#stage{position:absolute;left:50%;top:50%;width:1600px;height:900px;transform-origin:center center}
+.slide{position:absolute;inset:0;background:var(--bg);padding:64px 80px 70px;display:flex;flex-direction:column;
+  opacity:0;pointer-events:none;transform:translateX(40px);transition:opacity .45s ease,transform .45s ease;overflow:hidden;border-radius:4px}
+.slide.active{opacity:1;pointer-events:auto;transform:none}
+.slide.past{transform:translateX(-40px)}
+.slide h1{font-size:64px;line-height:1.05;margin:0 0 18px;letter-spacing:-1.5px}
+.slide h2{font-size:42px;margin:0 0 6px;letter-spacing:-.8px}
+.slide h3{font-size:22px;margin:0 0 10px}
+.kicker{font:700 15px var(--sans);text-transform:uppercase;letter-spacing:2px;color:var(--blue);margin-bottom:10px}
+.sub{color:var(--muted);font-size:21px;margin:0 0 26px;max-width:1250px;line-height:1.4}
+p,li{font-size:20px;line-height:1.45}
+ul{margin:0;padding-left:22px} li{margin:6px 0}
+code,.mono{font-family:var(--mono);font-size:.86em}
+code{background:#e8eefc;color:#1e3a8a;padding:1px 6px;border-radius:5px}
+.grid{display:grid;gap:22px} .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+.g-6-4{grid-template-columns:1.5fr 1fr} .g-4-6{grid-template-columns:1fr 1.5fr}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px -12px rgba(15,23,42,.12)}
+.card h3{display:flex;align-items:center;gap:10px}
+.card p{margin:6px 0;font-size:18px}
+.card li{font-size:18px}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font:600 14px var(--sans);background:var(--blue-50);color:var(--blue);margin:2px 4px 2px 0}
+.pill.g{background:var(--green-50);color:var(--green)} .pill.o{background:var(--orange-50);color:var(--orange)}
+.pill.r{background:var(--red-50);color:var(--red)} .pill.v{background:var(--violet-50);color:var(--violet)}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;background:var(--blue)}
+.big{font-size:56px;font-weight:800;letter-spacing:-1.5px;line-height:1}
+.big small{font-size:22px;font-weight:600;color:var(--muted);letter-spacing:0}
+.stat{display:flex;flex-direction:column;gap:6px}
+.stat .lbl{color:var(--muted);font-size:16px}
+table{border-collapse:collapse;width:100%;font-size:17px}
+th{text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+.bad{color:var(--red);font-weight:700} .good{color:var(--green);font-weight:700}
+.shot{border-radius:12px;border:1px solid var(--line);box-shadow:0 12px 32px -14px rgba(15,23,42,.35);cursor:zoom-in;display:block;max-width:100%;transition:transform .2s}
+.shot:hover{transform:scale(1.01)}
+.cap{color:var(--muted);font-size:15px;margin-top:8px}
+.foot{position:absolute;left:80px;right:80px;bottom:26px;display:flex;justify-content:space-between;color:#94a3b8;font-size:14px}
+.callout{border-left:5px solid var(--blue);background:var(--blue-50);padding:12px 16px;border-radius:0 12px 12px 0;font-size:19px}
+.callout.o{border-color:var(--orange);background:var(--orange-50)} .callout.g{border-color:var(--green);background:var(--green-50)}
+.callout.r{border-color:var(--red);background:var(--red-50)}
+.term{background:#0b1020;color:#e5e7eb;font:15px/1.5 var(--mono);border-radius:12px;padding:16px 18px;white-space:pre;overflow:hidden}
+.term .c{color:#64748b} .term .g{color:#4ade80} .term .y{color:#facc15} .term .b{color:#93c5fd}
+.frag{opacity:0;transform:translateY(10px);transition:opacity .35s,transform .35s}
+.frag.on{opacity:1;transform:none}
+/* ---------- title slide ---------- */
+.slide.title{background:radial-gradient(1200px 700px at 85% 10%,#1e3a8a 0%,transparent 60%),radial-gradient(900px 600px at 0% 100%,#4c1d95 0%,transparent 55%),var(--navy);color:#fff;justify-content:center}
+.slide.title .kicker{color:#93c5fd}
+.slide.title .sub{color:#cbd5e1}
+.slide.title .links{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}
+.slide.title .links a{color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.25);padding:10px 16px;border-radius:12px;font-size:17px;background:rgba(255,255,255,.06)}
+.slide.title .links a:hover{background:rgba(255,255,255,.14)}
+.slide.section{background:linear-gradient(135deg,#1e3a8a,#0b1020);color:#fff;justify-content:center}
+.slide.section h1{font-size:80px} .slide.section .sub{color:#cbd5e1} .slide.section .kicker{color:#93c5fd}
+/* ---------- diagrams ---------- */
+svg text{font-family:var(--sans)}
+.flow{stroke-dasharray:8 7;animation:dash 1.2s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-30}}
+.node rect{transition:filter .2s} .node:hover rect{filter:drop-shadow(0 6px 14px rgba(37,99,235,.35))}
+.pipe{display:flex;align-items:stretch;gap:0;margin:8px 0 22px}
+.pipe .st{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;position:relative;margin-right:28px}
+.pipe .st:last-child{margin-right:0}
+.pipe .st:not(:last-child)::after{content:"";position:absolute;right:-22px;top:50%;width:16px;height:16px;border-top:3px solid var(--blue);border-right:3px solid var(--blue);transform:translateY(-50%) rotate(45deg)}
+.pipe .st b{display:block;font-size:18px;margin-bottom:4px}
+.pipe .st span{font-size:15px;color:var(--muted);line-height:1.35;display:block}
+.pipe .st.gate{border:2px dashed var(--orange);background:var(--orange-50)}
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{font:600 17px var(--sans);border:1px solid var(--line);background:#fff;padding:10px 16px;border-radius:12px;cursor:pointer;color:var(--muted)}
+.tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tabpane{display:none} .tabpane.on{display:block;animation:fade .3s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* ---------- chrome: progress, counter, controls ---------- */
+#progress{position:fixed;left:0;top:0;height:4px;background:linear-gradient(90deg,#60a5fa,#a78bfa);transition:width .35s;z-index:20}
+#hud{position:fixed;right:18px;bottom:14px;display:flex;gap:8px;align-items:center;z-index:20;opacity:.55;transition:opacity .2s}
+#hud:hover{opacity:1}
+#hud button{background:rgba(15,23,42,.75);color:#fff;border:1px solid rgba(148,163,184,.4);border-radius:10px;padding:7px 11px;font:600 14px var(--sans);cursor:pointer}
+#hud span{color:#fff;background:rgba(15,23,42,.75);padding:6px 8px;border-radius:8px;font:600 14px var(--mono);min-width:64px;text-align:center}
+#help{position:fixed;left:18px;bottom:14px;color:#64748b;font-size:13px;z-index:20}
+/* overview */
+#overview{position:fixed;inset:0;background:#0b1020;z-index:30;display:none;overflow:auto;padding:30px}
+#overview.on{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;align-content:start}
+#overview .thumb{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;cursor:pointer;outline:2px solid transparent;background:var(--bg)}
+#overview .thumb:hover,#overview .thumb.cur{outline-color:#60a5fa}
+#overview .thumb .inner{position:absolute;left:0;top:0;width:1600px;height:900px;transform-origin:0 0;pointer-events:none}
+#overview .thumb .inner .slide{opacity:1;transform:none;transition:none}
+#overview .thumb .inner .frag{opacity:1;transform:none}
+#overview .thumb .n{position:absolute;right:8px;bottom:6px;background:rgba(15,23,42,.8);color:#fff;font:600 12px var(--mono);padding:2px 7px;border-radius:6px}
+/* notes */
+#notes{position:fixed;left:0;right:0;bottom:0;max-height:34vh;overflow:auto;background:rgba(11,16,32,.96);color:#e2e8f0;padding:16px 24px 46px;font-size:18px;line-height:1.5;z-index:25;display:none;border-top:2px solid #334155}
+#notes.on{display:block} #notes b{color:#93c5fd}
+aside.notes{display:none}
+/* lightbox */
+#lightbox{position:fixed;inset:0;background:rgba(2,6,23,.92);z-index:40;display:none;align-items:center;justify-content:center;cursor:zoom-out;padding:20px}
+#lightbox.on{display:flex} #lightbox img{max-width:96vw;max-height:94vh;border-radius:10px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+#lightbox.tall{align-items:flex-start;overflow:auto} #lightbox.tall img{max-height:none;max-width:min(96vw,1400px)}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div id="stage">
+
+<!-- =============================== 1. PORTADA =============================== -->
+<section class="slide title" data-title="Portada">
+  <div class="kicker">Proyecto de cátedra integrador · DevOps / Métricas de Software · ESEN</div>
+  <h1>Ingesta y análisis de eventos<br><span style="color:#93c5fd">de dispositivos IoT</span></h1>
+  <p class="sub" style="font-size:24px;max-width:1100px">Escenario 3: plataforma que recibe lecturas de temperatura, humedad y estado; tolera duplicados,
+    desorden y ráfagas; calcula agregados y alertas. Corre en <b>K3s sobre una VM de Google Cloud</b>, construida con Terraform,
+    entregada con GitHub Actions y observada con Prometheus, Loki, Tempo y OpenTelemetry.</p>
+  <p style="color:#94a3b8;font-size:18px;margin:0">Equipo: <b style="color:#fff">[nombres del equipo]</b> &nbsp;·&nbsp; Nube: GCP (cambio desde Azure aprobado por el docente)</p>
+  <div class="links">
+    <a href="https://api.136-71-37-219.sslip.io/version" target="_blank">API prod ↗</a>
+    <a href="https://grafana.136-71-37-219.sslip.io/d/pfd-overview" target="_blank">Dashboard Grafana ↗</a>
+    <a href="https://github.com/renderos1-1/proyecto-final-devops" target="_blank">Repositorio ↗</a>
+  </div>
+  <aside class="notes">Presentar el escenario en una frase: recibir eventos de sensores sin perder ninguno confirmado, aunque lleguen duplicados, desordenados o en ráfagas.
+  Aclarar desde el inicio que usamos GCP con aprobación del docente; cada requisito "Azure" del enunciado tiene su equivalente en GCP.</aside>
+</section>
+
+<!-- =============================== 2. PROBLEMA =============================== -->
+<section class="slide" data-title="Problema">
+  <div class="kicker">El problema</div>
+  <h2>Eventos que se duplican, llegan tarde y en ráfagas</h2>
+  <p class="sub">Una organización de mantenimiento necesita el estado de sus instalaciones, históricos y alertas cuando una lectura sale de límites.
+    La red de dispositivos no es confiable, y el sistema tiene que ser correcto de todas formas.</p>
+  <div class="grid g3">
+    <div class="card frag"><h3><span class="dot" style="background:var(--orange)"></span>Duplicados</h3>
+      <p>Un dispositivo reintenta y el mismo <code>eventId</code> llega dos veces. <b>No debe distorsionar</b> conteos ni agregados (ESC3-05).</p></div>
+    <div class="card frag"><h3><span class="dot" style="background:var(--violet)"></span>Fuera de orden</h3>
+      <p>Llegan eventos generados antes que otros ya recibidos. Las consultas usan la <b>marca de generación</b>, no el orden de llegada (ESC3-08).</p></div>
+    <div class="card frag"><h3><span class="dot" style="background:var(--red)"></span>Ráfagas e interrupciones</h3>
+      <p>Picos de carga y procesadores que se detienen. <b>Nada confirmado se pierde</b>, y el backlog debe drenar a cero al recuperar (P3-4).</p></div>
+  </div>
+  <div class="card frag" style="margin-top:22px">
+    <h3>Pruebas obligatorias del escenario</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      <span class="pill">P3-1 · ráfaga de 1,000 eventos</span><span class="pill">P3-2 · 20 ev/s durante 120 s</span>
+      <span class="pill">P3-3 · 50 duplicados + 50 fuera de orden</span><span class="pill">P3-4 · detener el procesador con pendientes</span>
+      <span class="pill">P3-5 · tasas, retraso y una degradación por menor capacidad</span>
+    </div>
+  </div>
+  <aside class="notes">Los tres riesgos guían todo el diseño: deduplicación con una restricción única, consultas por generatedAt con intervalo [inicio, fin), y una cola durable para sobrevivir interrupciones.</aside>
+</section>
+
+<!-- =============================== 3. ARQUITECTURA =============================== -->
+<section class="slide" data-title="Arquitectura">
+  <div class="kicker">COM-02 · Arquitectura implementada</div>
+  <h2>Aceptar rápido y de forma durable, procesar después</h2>
+  <svg viewBox="0 0 1440 520" width="1440" height="520" style="margin-top:6px">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+      <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+    </defs>
+    <!-- VM boundary -->
+    <rect x="300" y="20" width="1130" height="490" rx="22" fill="#fff" stroke="#cbd5e1" stroke-dasharray="6 6"/>
+    <text x="322" y="50" font-size="16" fill="#64748b" font-weight="700">VM e2-standard-2 (GCP) · K3s v1.37 · namespaces pfd-dev / pfd-prod</text>
+    <!-- client -->
+    <g class="node"><rect x="10" y="150" width="230" height="110" rx="16" fill="#eff6ff" stroke="#2563eb"/>
+      <text x="125" y="192" text-anchor="middle" font-size="20" font-weight="700">Dispositivos</text>
+      <text x="125" y="218" text-anchor="middle" font-size="15" fill="#475569">generador reproducible</text>
+      <text x="125" y="240" text-anchor="middle" font-size="15" fill="#475569">(semilla, carga, errores)</text></g>
+    <path class="flow" d="M240,205 L345,205" stroke="#2563eb" stroke-width="3" fill="none" marker-end="url(#ah)"/>
+    <text x="292" y="190" text-anchor="middle" font-size="13" fill="#2563eb" font-weight="700">HTTPS</text>
+    <!-- ingress -->
+    <g class="node"><rect x="350" y="150" width="200" height="110" rx="16" fill="#fff" stroke="#0f172a"/>
+      <text x="450" y="192" text-anchor="middle" font-size="19" font-weight="700">NGINX Ingress</text>
+      <text x="450" y="216" text-anchor="middle" font-size="14" fill="#475569">TLS Let's Encrypt</text>
+      <text x="450" y="236" text-anchor="middle" font-size="14" fill="#475569">solo 80/443 públicos</text></g>
+    <path class="flow" d="M550,205 L630,205" stroke="#2563eb" stroke-width="3" fill="none" marker-end="url(#ah)"/>
+    <!-- api -->
+    <g class="node"><rect x="635" y="140" width="230" height="130" rx="16" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+      <text x="750" y="178" text-anchor="middle" font-size="20" font-weight="700">ingest-api ×2</text>
+      <text x="750" y="202" text-anchor="middle" font-size="14" fill="#475569">NestJS · valida · autentica</text>
+      <text x="750" y="222" text-anchor="middle" font-size="14" fill="#475569">INSERT → <tspan font-weight="700" fill="#16a34a">202</tspan> tras commit</text>
+      <text x="750" y="246" text-anchor="middle" font-size="13" fill="#475569">duplicado → 200 · inválido → 422</text></g>
+    <path class="flow" d="M865,205 L985,205" stroke="#2563eb" stroke-width="3" fill="none" marker-end="url(#ah)"/>
+    <!-- db -->
+    <g class="node"><rect x="990" y="125" width="230" height="160" rx="16" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+      <text x="1105" y="162" text-anchor="middle" font-size="20" font-weight="700">PostgreSQL 16</text>
+      <text x="1105" y="186" text-anchor="middle" font-size="14" fill="#475569">StatefulSet + PVC</text>
+      <text x="1105" y="210" text-anchor="middle" font-size="14" fill="#475569">tabla events = cola durable</text>
+      <text x="1105" y="232" text-anchor="middle" font-size="13" fill="#166534" font-family="monospace">UNIQUE(device_id,event_id)</text>
+      <text x="1105" y="256" text-anchor="middle" font-size="13" fill="#166534" font-family="monospace">pending→processing→processed</text></g>
+    <!-- processor -->
+    <g class="node"><rect x="990" y="355" width="230" height="120" rx="16" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+      <text x="1105" y="392" text-anchor="middle" font-size="20" font-weight="700">processor</text>
+      <text x="1105" y="416" text-anchor="middle" font-size="14" fill="#475569">FOR UPDATE SKIP LOCKED</text>
+      <text x="1105" y="438" text-anchor="middle" font-size="14" fill="#475569">lease 60 s · 5 intentos</text>
+      <text x="1105" y="460" text-anchor="middle" font-size="14" fill="#475569">alertas de negocio</text></g>
+    <path class="flow" d="M1080,355 L1080,290" stroke="#7c3aed" stroke-width="3" fill="none" marker-end="url(#ah)"/>
+    <path class="flow" d="M1130,290 L1130,355" stroke="#7c3aed" stroke-width="3" fill="none" marker-end="url(#ah)"/>
+    <text x="1066" y="327" text-anchor="end" font-size="13" fill="#7c3aed" font-weight="700">reclama lote / marca procesado</text>
+    <!-- observability -->
+    <g class="node"><rect x="350" y="355" width="515" height="120" rx="16" fill="#fff7ed" stroke="#ea580c"/>
+      <text x="607" y="390" text-anchor="middle" font-size="19" font-weight="700">Observabilidad (namespace observability)</text>
+      <text x="607" y="418" text-anchor="middle" font-size="15" fill="#475569">Prometheus · Alertmanager · Grafana · Loki · Tempo</text>
+      <text x="607" y="442" text-anchor="middle" font-size="15" fill="#475569">OpenTelemetry Collector (OTLP + logs de pods)</text></g>
+    <path d="M750,270 L700,352" stroke="#94a3b8" stroke-width="2" fill="none" stroke-dasharray="4 4" marker-end="url(#ahg)"/>
+    <path d="M990,415 L868,415" stroke="#94a3b8" stroke-width="2" fill="none" stroke-dasharray="4 4" marker-end="url(#ahg)"/>
+    <text x="928" y="404" text-anchor="middle" font-size="12" fill="#64748b">telemetría</text>
+  </svg>
+  <div class="grid g3" style="margin-top:4px">
+    <div class="callout frag"><b>Aceptación síncrona:</b> 202 solo después de que el INSERT hace commit.</div>
+    <div class="callout g frag"><b>Sin broker extra:</b> la tabla es la cola; el backlog es una consulta.</div>
+    <div class="callout o frag"><b>Desacople:</b> si el procesador falla, la API sigue aceptando.</div>
+  </div>
+  <aside class="notes">Recorrer el flujo: el generador manda HTTPS, el ingress termina TLS, la API valida y hace el INSERT. Solo después del commit responde 202: eso es una "operación aceptada" según 5.1.
+  El procesador reclama lotes con SKIP LOCKED, así que varias réplicas no procesan dos veces la misma fila. Si un procesador muere, la fila queda en processing y se recupera cuando vence el lease de 60 s.</aside>
+</section>
+
+<!-- =============================== 4. GARANTÍAS =============================== -->
+<section class="slide" data-title="Garantías">
+  <div class="kicker">5.1 · 5.2 · Semántica y consistencia</div>
+  <h2>Qué garantiza el sistema y qué no</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3>Aceptada vs. confirmada</h3>
+      <table>
+        <tr><th>Estado</th><th>Significa</th></tr>
+        <tr><td><span class="pill">accepted (202)</span></td><td>Persistido de forma durable. Sobrevive a reinicios.</td></tr>
+        <tr><td><span class="pill g">processed</span></td><td>Alertas evaluadas y guardadas; efecto aplicado.</td></tr>
+        <tr><td><span class="pill o">duplicate (200)</span></td><td>Ya existía: devuelve la referencia original y no crea trabajo.</td></tr>
+        <tr><td><span class="pill r">rejected (422)</span></td><td>No cuenta como aceptada; queda registrada con su motivo.</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Cifras consistentes (ESC3-09)</h3>
+      <div class="term" style="font-size:16px"><span class="b">received</span> = accepted + duplicates + rejected
+<span class="b">accepted</span> = pending + processing + processed + failed</div>
+      <p style="margin-top:12px"><b>Procesamiento:</b> al menos una vez, con efectos idempotentes
+        (<code>ON CONFLICT DO NOTHING</code> en alertas). No prometemos "exactamente una vez".</p>
+      <p><b>Agregados:</b> por <code>generatedAt</code> en <code>[inicio, fin)</code>, así que el orden de llegada no importa.</p>
+      <p><b>Resultado desconocido:</b> el cliente reintenta con el mismo <code>eventId</code>, y la restricción única lo vuelve inocuo.</p>
+    </div>
+  </div>
+  <aside class="notes">El punto clave de 5.2: qué pasa si el cliente no sabe si su solicitud llegó. Reintenta con el mismo eventId; si el primero sí llegó, recibe "duplicate" con la referencia original. Las invariantes se verifican en cada corrida de pruebas.</aside>
+</section>
+
+<!-- =============================== 5. DECISIONES =============================== -->
+<section class="slide" data-title="Decisiones">
+  <div class="kicker">COM-06 · Compromisos y alternativas descartadas</div>
+  <h2>Decisiones técnicas</h2>
+  <table style="margin-top:14px;font-size:17px">
+    <tr><th style="width:15%">Tema</th><th style="width:27%">Elegimos</th><th style="width:25%">Descartamos</th><th>Por qué</th></tr>
+    <tr class="frag"><td><b>Cola</b></td><td>Tabla PostgreSQL + <code>SKIP LOCKED</code></td><td>Kafka, Redis Streams</td><td>Una sola fuente de verdad; aceptar y encolar es <b>una transacción</b>. Menos RAM y menos piezas que operar.</td></tr>
+    <tr class="frag"><td><b>Plataforma</b></td><td>K3s en 1 VM</td><td>GKE, varios nodos</td><td>Lo exige el enunciado. Cabe en US$100; sin HA entre zonas (permitido).</td></tr>
+    <tr class="frag"><td><b>Ingress</b></td><td>F5 NGINX Ingress Controller</td><td>ingress-nginx comunitario</td><td>El comunitario se <b>retiró en marzo de 2026</b> y ya no recibe parches de seguridad.</td></tr>
+    <tr class="frag"><td><b>TLS / DNS</b></td><td>Let's Encrypt + <code>sslip.io</code></td><td>Dominio propio, certificado manual</td><td>Gratis y automático (cert-manager). El nombre resuelve a la IP estática.</td></tr>
+    <tr class="frag"><td><b>Secretos</b></td><td>Secretos de entorno de GitHub → Secret de K8s (cifrado en reposo)</td><td>Secret Manager + External Secrets</td><td>Menos componentes. Limitación: el Secret se puede leer con permisos RBAC del namespace.</td></tr>
+    <tr class="frag"><td><b>Identidad CI</b></td><td>OIDC + Workload Identity Federation</td><td>Llaves JSON de cuentas de servicio</td><td>Sin credenciales de larga vida que filtrar o rotar.</td></tr>
+    <tr class="frag"><td><b>Base de datos</b></td><td>Postgres en el clúster</td><td>Cloud SQL</td><td>~US$10–25/mes extra. Riesgo aceptado: los datos viven en el disco de la VM.</td></tr>
+  </table>
+  <aside class="notes">Si preguntan por qué no Kafka: con Postgres, aceptar el evento y encolarlo es la misma transacción, así que no hay ventana donde el evento esté en la base pero no en la cola (o al revés). El costo es la escala: para miles de eventos por segundo, Kafka sería la opción.</aside>
+</section>
+
+<!-- =============================== 6. SECCIÓN DEVOPS =============================== -->
+<section class="slide section" data-title="DevOps">
+  <div class="kicker">Parte 1</div>
+  <h1>DevOps</h1>
+  <p class="sub">Infraestructura como código, Kubernetes, entrega continua, seguridad y costos.</p>
+</section>
+
+<!-- =============================== 7. TERRAFORM =============================== -->
+<section class="slide" data-title="Terraform">
+  <div class="kicker">DEV-06 · DEV-07 · DEV-08 · DEV-09</div>
+  <h2>Infraestructura como código en dos capas</h2>
+  <div class="grid g-6-4" style="margin-top:14px">
+    <div>
+      <div class="grid g2">
+        <div class="card"><h3><span class="pill o">1 vez</span> infra/bootstrap</h3>
+          <ul><li>Bucket GCS para el estado: <b>versionado, privado, con bloqueo</b></li>
+          <li>Federación OIDC GitHub → GCP (solo este repo)</li>
+          <li>3 cuentas de servicio de CI con mínimo privilegio</li>
+          <li>Presupuesto US$100 con alertas</li></ul></div>
+        <div class="card"><h3><span class="pill g">continuo</span> infra/terraform</h3>
+          <ul><li>VPC, firewall, IP estática</li>
+          <li>Artifact Registry (tags inmutables)</li>
+          <li>VM Shielded + <b>script de arranque que instala K3s</b></li>
+          <li>cert-manager, NGINX y el emisor TLS como manifiestos de K3s</li></ul></div>
+      </div>
+      <div class="pipe" style="margin-top:20px">
+        <div class="st"><b>PR</b><span>fmt · validate · <b>plan</b> con SA de solo lectura</span></div>
+        <div class="st"><b>Comentario</b><span>el plan queda en el PR para revisión</span></div>
+        <div class="st gate"><b>Merge + aprobación</b><span>entorno <code>infra-prod</code></span></div>
+        <div class="st"><b>Apply</b><span>re-plan y apply con <code>gha-tf-apply</code></span></div>
+      </div>
+      <div class="callout">Un PR <b>nunca</b> aplica: la SA de plan solo puede leer, y la de apply solo se puede asumir desde el entorno <code>infra-prod</code>.</div>
+    </div>
+    <div><img class="shot" src="img/pr-terraform-plan.png" alt="Plan de Terraform comentado en el PR">
+      <div class="cap">El workflow comenta el plan en cada PR (aquí: solo cambian outputs).</div>
+      <div class="term" style="margin-top:16px;font-size:14px"><span class="c"># reconstrucción completa (docs/runbooks/rebuild.md)</span>
+cd infra/bootstrap && terraform apply   <span class="c"># 1 vez</span>
+cd infra/terraform && terraform apply
+<span class="c"># la VM arranca e instala K3s sola</span>
+kubectl get nodes   <span class="g">Ready</span></div></div>
+  </div>
+  <aside class="notes">El bootstrap es la única parte manual permitida por 5.6: no puede haber CI antes de que existan su identidad y el bucket de estado. Su propio estado también se migró al bucket.
+  Si piden interpretar un plan: el símbolo + crea, - destruye, ~ modifica en sitio, -/+ reemplaza. Cambiar el script de arranque está en ignore_changes para no recrear la VM y perder datos.</aside>
+</section>
+
+<!-- =============================== 8. KUBERNETES =============================== -->
+<section class="slide" data-title="Kubernetes">
+  <div class="kicker">DEV-09 · DEV-10 · DEV-11 · Sección 4</div>
+  <h2>Workloads en K3s</h2>
+  <div class="grid g-6-4" style="margin-top:12px">
+    <div class="card" style="padding:14px 18px">
+      <table style="font-size:16px">
+        <tr><th>Workload</th><th>Tipo</th><th>Probes</th><th>Recursos</th></tr>
+        <tr><td><b>ingest-api</b><br><span class="pill">prod ×2</span><span class="pill">dev ×1</span></td><td>Deployment<br><span class="mono" style="font-size:13px">maxUnavailable 0</span></td>
+          <td><b>startup</b> /healthz/live (60 s)<br><b>readiness</b> /healthz/ready (BD)<br><b>liveness</b> /healthz/live (sin BD)</td><td>req 100m / 160Mi<br>lím. 384Mi</td></tr>
+        <tr><td><b>processor</b></td><td>Deployment</td><td>readiness: BD<br>liveness: bucle atascado &gt; 60 s</td><td>req 100m / 160Mi<br>lím. 384Mi</td></tr>
+        <tr><td><b>postgres</b></td><td>StatefulSet + PVC 5Gi</td><td><code>pg_isready</code></td><td>req 100m / 256Mi<br>lím. 512Mi</td></tr>
+        <tr><td><b>migrate</b></td><td>Job</td><td>antes de cada rollout</td><td>req 50m / 96Mi</td></tr>
+      </table>
+    </div>
+    <div class="grid" style="gap:14px">
+      <div class="callout"><b>Liveness no consulta la BD</b>: si Postgres cae, readiness saca la API del Service, pero no la reinicia en bucle.</div>
+      <div class="callout o"><b>Sin límite de CPU</b>: evita el throttling. El request garantiza la parte justa. Límite de memoria = protección contra OOM.</div>
+      <div class="callout g"><b>Medido:</b> la API usa ~50 MiB y ~0.05 núcleos a 20 ev/s, así que los requests dejan margen ×3.</div>
+    </div>
+  </div>
+  <div class="grid g4" style="margin-top:18px">
+    <div class="card"><h3>Ambientes</h3><p><code>pfd-dev</code> / <code>pfd-prod</code>: Secrets, BD y datos separados.</p></div>
+    <div class="card"><h3>Red</h3><p>NetworkPolicy <b>default-deny</b>; solo ingress→API, apps→BD, monitoreo→/metrics.</p></div>
+    <div class="card"><h3>Contenedores</h3><p>UID 10001, rootfs de solo lectura, <code>drop ALL</code>, seccomp.</p></div>
+    <div class="card"><h3>Imágenes</h3><p>Pull sin llaves: token de 1 h del metadata server, renovado cada 30 min.</p></div>
+  </div>
+  <aside class="notes">Preguntas típicas de 4.3. Si falla readiness en una réplica: sale de los endpoints del Service y el tráfico va a la otra, sin reinicio.
+  Si el límite de memoria es menor que el consumo: el kernel mata el contenedor (OOMKilled, exit 137) y kubelet lo reinicia con backoff.
+  Para diagnosticar un Pod que no inicia: kubectl describe pod (eventos: ErrImagePull, CreateContainerConfigError por Secret faltante, Insufficient memory, probe failed) y kubectl logs --previous.</aside>
+</section>
+
+<!-- =============================== 9. CI/CD =============================== -->
+<section class="slide" data-title="CI/CD">
+  <div class="kicker">DEV-01 … DEV-05 · 5.7</div>
+  <h2>Del commit a producción, con trazabilidad</h2>
+  <div class="pipe">
+    <div class="st"><b>Pull request</b><span>5 checks obligatorios: lint, unit + e2e con Postgres, build + Trivy, manifiestos, plan TF</span></div>
+    <div class="st"><b>Publish</b><span>imagen <code>:&lt;git SHA&gt;</code> inmutable en Artifact Registry, con provenance</span></div>
+    <div class="st"><b>Deploy dev</b><span>secrets → migración (Job) → rollout → smoke test</span></div>
+    <div class="st gate"><b>Aprobación</b><span>revisor requerido en el entorno <code>prod</code></span></div>
+    <div class="st"><b>Deploy prod</b><span>misma imagen; <code>/version</code> debe devolver el SHA</span></div>
+  </div>
+  <div class="grid g-6-4">
+    <div><img class="shot" src="img/gha-release-approval.png" alt="Run de release con aprobación">
+      <div class="cap">Release #4: publish → dev → <b>prod aprobado</b> por un revisor (regla de protección del entorno).</div></div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card"><h3>¿Qué versión corre?</h3>
+        <div class="term" style="font-size:13.5px">$ curl https://api.…/version
+{"gitSha":"<span class="g">7974050…</span>"}
+$ kubectl -n pfd-prod get deploy \
+   -o jsonpath='{..image}'
+…/ingest-api:<span class="g">7974050…</span></div>
+        <p style="font-size:16px">Commit ↔ run del workflow ↔ imagen ↔ pod: todos llevan el <b>mismo SHA</b>.</p></div>
+      <div class="callout o"><b>Prevención de promociones accidentales:</b> los entornos solo aceptan <code>main</code>, y el token de dev no tiene permisos en prod.</div>
+    </div>
+  </div>
+  <aside class="notes">Mostrar en vivo: curl a /version y kubectl get deploy con el SHA, luego abrir el run en GitHub. La imagen se construye una sola vez y se promueve; dev y prod corren exactamente el mismo artefacto.</aside>
+</section>
+
+<!-- =============================== 10. ROLLBACK =============================== -->
+<section class="slide" data-title="Rollback">
+  <div class="kicker">DEV-12 · Recuperación</div>
+  <h2>Un despliegue defectuoso se revierte solo</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3>Caso real: el primer release</h3>
+      <p>Un error de Kustomize hizo que los pods pidieran la imagen <code>:latest</code>, que no existía.</p>
+      <div class="term" style="font-size:14px;margin:10px 0">Failed to pull image ".../ingest-api:latest": NotFound
+<span class="y">::error::Rollout failed; reverting to previous ReplicaSet</span>
+deployment.apps/ingest-api rolled back</div>
+      <p>Como <code>maxUnavailable: 0</code>, la versión anterior <b>nunca dejó de atender</b>. El workflow falló en rojo, y el arreglo llegó por PR #2.</p>
+    </div>
+    <div class="card">
+      <h3>Tres formas de revertir</h3>
+      <ul>
+        <li><b>Automática:</b> si los pods nuevos no quedan Ready en 180 s, el workflow ejecuta <code>rollout undo</code>.</li>
+        <li><b>Manual:</b> <code>kubectl rollout undo deployment/processor</code> (usada en el experimento).</li>
+        <li><b>Por versión:</b> workflow <code>deploy</code> con el SHA anterior, reproducible y auditable.</li>
+      </ul>
+      <div class="callout r" style="margin-top:12px">El rollback <b>no restaura datos</b>. Por eso las migraciones son aditivas: la versión anterior sigue funcionando con el esquema nuevo.</div>
+    </div>
+  </div>
+  <aside class="notes">Verificación posterior: rollout status, el SHA en /version y kubectl rollout history (change-cause con el SHA y el run).</aside>
+</section>
+
+<!-- =============================== 11. SEGURIDAD =============================== -->
+<section class="slide" data-title="Seguridad">
+  <div class="kicker">DEV-10 · 5.3 · Mínimo privilegio</div>
+  <h2>Cada identidad puede lo justo</h2>
+  <div class="grid g-6-4" style="margin-top:12px">
+    <div class="card" style="padding:12px 18px">
+      <table style="font-size:16px">
+        <tr><th>Identidad</th><th>Puede</th><th>Desde dónde</th></tr>
+        <tr><td><code>gha-tf-plan</code></td><td>Leer el proyecto y el estado</td><td>cualquier PR del repo</td></tr>
+        <tr><td><code>gha-tf-apply</code></td><td>Cambiar la infraestructura</td><td>solo el entorno <code>infra-prod</code> (aprobado)</td></tr>
+        <tr><td><code>gha-deployer</code></td><td>Subir imágenes, abrir el túnel IAP</td><td>entornos dev/prod, rama main</td></tr>
+        <tr><td><code>deployer-dev</code> / <code>-prod</code> (K8s)</td><td>Gestionar workloads de <b>su</b> namespace</td><td>token en el secreto del entorno de GitHub</td></tr>
+        <tr><td><code>k3s-node</code> (VM)</td><td>Leer imágenes, escribir logs</td><td>la VM</td></tr>
+        <tr><td><code>ar-pull-refresher</code></td><td>Actualizar <b>un</b> Secret (<code>ar-pull</code>)</td><td>CronJob</td></tr>
+      </table>
+    </div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card"><h3>Red</h3><p>Públicos: <b>80 y 443</b>. SSH (22) y API de K8s (6443) solo por <b>IAP</b>, con IAM. Nunca expuestos a internet.</p></div>
+      <div class="card"><h3>Secretos</h3><p>Ninguno en git, imágenes ni estado. CI lo verifica. Antes de hacer público el repo se revisó todo el historial.</p></div>
+      <div class="callout o"><b>Lo que un Secret de K8s no protege:</b> está cifrado en reposo (K3s <code>secrets-encryption</code>), pero quien tenga <code>get secrets</code> en el namespace o sea admin del nodo puede leerlo.</div>
+    </div>
+  </div>
+  <aside class="notes">Hacer énfasis en que no hay llaves JSON en ningún lugar: GitHub obtiene tokens de corta duración por OIDC. Y el token de deploy de dev no puede tocar prod: son ServiceAccounts distintas con RoleBindings por namespace.</aside>
+</section>
+
+<!-- =============================== 12. COSTOS =============================== -->
+<section class="slide" data-title="Costos">
+  <div class="kicker">DEV-14 · 5.9</div>
+  <h2>Dentro de los US$100</h2>
+  <div class="grid g-6-4" style="margin-top:14px">
+    <div class="card">
+      <table>
+        <tr><th>Recurso</th><th>Precio</th><th class="num">24/7 · mes</th><th class="num">Uso planificado</th></tr>
+        <tr><td>VM e2-standard-2</td><td>~US$0.067/h</td><td class="num">$49</td><td class="num">~$16</td></tr>
+        <tr><td>Disco pd-balanced 40 GB</td><td>US$0.10/GB-mes</td><td class="num">$4</td><td class="num">$5</td></tr>
+        <tr><td>IP estática</td><td>~US$0.005/h, <b>también con la VM detenida</b></td><td class="num">$3.6</td><td class="num">$4.5</td></tr>
+        <tr><td>Artifact Registry, GCS, egreso</td><td>centavos</td><td class="num">&lt; $2</td><td class="num">&lt; $2</td></tr>
+        <tr><td><b>Total</b></td><td></td><td class="num"><b>~$58</b></td><td class="num"><b class="good">~$27</b></td></tr>
+      </table>
+      <p class="cap">Sin balanceador de GCP (~US$18/mes): K3s ServiceLB usa la IP de la VM.</p>
+    </div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card"><h3>Controles</h3><ul>
+        <li>Presupuesto con alertas al 25/50/75/90/100% y al 100% <b>pronosticado</b></li>
+        <li><code>scripts/vm.sh stop</code> cuando nadie trabaja</li>
+        <li>Limpieza automática de imágenes viejas</li>
+        <li><code>terraform destroy</code> documentado</li></ul></div>
+      <div class="callout o">Las alertas de presupuesto <b>avisan, no detienen</b>. Una VM detenida deja de cobrar cómputo, pero el disco y la IP siguen cobrando.</div>
+    </div>
+  </div>
+  <aside class="notes">Mostrar el reporte de facturación real si lo piden. 8 GB de RAM porque la app, Postgres y toda la pila de observabilidad comparten el nodo; en reposo usa ~3.3 GB.</aside>
+</section>
+
+<!-- =============================== 13. SECCIÓN MÉTRICAS =============================== -->
+<section class="slide section" data-title="Métricas">
+  <div class="kicker">Parte 2</div>
+  <h1>Métricas y observabilidad</h1>
+  <p class="sub">Preguntas operativas, SLIs y SLOs, alertas, dashboards, pruebas y un incidente controlado.</p>
+</section>
+
+<!-- =============================== 14. STACK =============================== -->
+<section class="slide" data-title="Pila de observabilidad">
+  <div class="kicker">MET-02 · MET-03 · MET-04 · Anexo II 9</div>
+  <h2>Tres señales, una correlación</h2>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><h3><span class="pill">Métricas</span></h3>
+      <p><b>prom-client</b> → <code>/metrics</code> → Prometheus cada 15 s (ServiceMonitor). Reglas de SLI cada 30 s. Retención 7 días.</p>
+      <p class="cap">8 métricas propias + CPU/memoria (cAdvisor) + nodo + kube-state-metrics.</p></div>
+    <div class="card"><h3><span class="pill o">Logs</span></h3>
+      <p>JSON (pino) por stdout → OTel Collector (<code>filelog</code> + atributos de K8s) → <b>Loki</b> (OTLP nativo). 7 días.</p>
+      <p class="cap">Campos: timestamp, level, component, requestId, <b>trace_id</b>, deviceId, eventId, outcome.</p></div>
+    <div class="card"><h3><span class="pill v">Trazas</span></h3>
+      <p>SDK de OpenTelemetry → OTLP → Collector → <b>Tempo</b>. Muestreo al 100%. 72 h.</p>
+      <p class="cap">El procesador enlaza cada <code>process_event</code> a la traza de ingesta (span link), así que el salto asíncrono queda trazable.</p></div>
+  </div>
+  <div class="grid g2" style="margin-top:20px">
+    <div class="callout g"><b>Todo versionado:</b> <code>kubectl apply -k k8s/observability</code> reinstala charts, reglas y dashboard. Grafana no guarda estado.</div>
+    <div class="callout"><b>Cardinalidad acotada:</b> <code>deviceId</code> y <code>eventId</code> nunca son etiquetas; ~400–550 series por ambiente. El detalle por evento vive en logs y trazas.</div>
+  </div>
+  <aside class="notes">Instalar Prometheus no cumple el requisito: lo que se evalúa es la definición de indicadores y el razonamiento. Por eso cada métrica del catálogo (docs/metrics.md) tiene unidad, etiquetas, fuente, forma de cálculo y propósito.</aside>
+</section>
+
+<!-- =============================== 15. PREGUNTAS =============================== -->
+<section class="slide" data-title="Preguntas operativas">
+  <div class="kicker">Anexo II · 1 · MET-01</div>
+  <h2>Tres preguntas que guían la medición</h2>
+  <div class="grid g3" style="margin-top:18px">
+    <div class="card frag"><div class="big" style="color:var(--blue)">Q1</div><h3 style="margin-top:10px">¿La ingesta está sana para los clientes?</h3>
+      <p>Se aceptan eventos válidos rápido y sin errores de servidor.</p>
+      <p><b>Decisión:</b> revertir un release, escalar la API, investigar un cliente con muchos rechazos.</p>
+      <p class="cap">SLI disponibilidad + latencia · resultados · rechazos por motivo</p></div>
+    <div class="card frag"><div class="big" style="color:var(--violet)">Q2</div><h3 style="margin-top:10px">¿El procesamiento sigue el ritmo de la recepción?</h3>
+      <p>Cuánto backlog y retraso produce una reducción de capacidad. <i>(pregunta sugerida para el escenario 3)</i></p>
+      <p><b>Decisión:</b> agregar réplicas o subir el lote; estimar si el backlog drena solo.</p>
+      <p class="cap">SLI frescura · aceptados vs. procesados · backlog · espera vs. procesamiento</p></div>
+    <div class="card frag"><div class="big" style="color:var(--orange)">Q3</div><h3 style="margin-top:10px">¿Hay capacidad suficiente y qué la limita?</h3>
+      <p>CPU, memoria, base de datos o el diseño del procesador.</p>
+      <p><b>Decisión:</b> ajustar requests y límites, redimensionar la VM, encontrar el cuello de botella.</p>
+      <p class="cap">CPU/memoria vs. requests/límites · nodo · reinicios</p></div>
+  </div>
+  <aside class="notes">El dashboard está organizado exactamente con estas tres filas, así que cada panel responde a una pregunta. Los dashboards decorativos no cuentan según el anexo.</aside>
+</section>
+
+<!-- =============================== 16. SLIs / SLOs =============================== -->
+<section class="slide" data-title="SLIs y SLOs">
+  <div class="kicker">Anexo II · 2</div>
+  <h2>SLIs, SLOs y presupuesto de error</h2>
+  <div class="tabs" data-tabs>
+    <button class="on" data-tab="t-av">SLI 1 · Disponibilidad</button>
+    <button data-tab="t-fr">SLI 2 · Frescura (del escenario)</button>
+    <button data-tab="t-la">SLI 3 · Latencia</button>
+  </div>
+  <div class="tabpane on" id="t-av"><div class="grid g-6-4">
+    <div class="card"><table>
+      <tr><td style="width:28%"><b>Población</b></td><td>Solicitudes a <code>/v1/events</code> y <code>/v1/events/batch</code></td></tr>
+      <tr><td><b>Evento bueno</b></td><td>Respuesta que no es 5xx</td></tr>
+      <tr><td><b>Fórmula</b></td><td><code>1 − rate(5xx) / rate(total)</code></td></tr>
+      <tr><td><b>Exclusiones</b></td><td>4xx cuentan como buenos (el servicio respondió bien); health y metrics fuera</td></tr>
+      <tr><td><b>Fuente</b></td><td><code>http_request_duration_seconds_count</code> · ventanas 5m/30m/1h/6h/7d</td></tr></table></div>
+    <div class="card stat"><span class="lbl">SLO 1 · ventana 7 días</span><div class="big">99.5<small>%</small></div>
+      <span class="lbl">Presupuesto: 0.5% de las solicitudes</span>
+      <p style="font-size:17px">A 20 req/s: <b>≈ 60,480 fallas por semana</b>. Un reinicio planificado de ~2 min consume ~2% del presupuesto.</p></div></div></div>
+  <div class="tabpane" id="t-fr"><div class="grid g-6-4">
+    <div class="card"><table>
+      <tr><td style="width:28%"><b>Población</b></td><td>Eventos que terminaron de procesarse</td></tr>
+      <tr><td><b>Evento bueno</b></td><td><code>processed_at − received_at ≤ 5 s</code></td></tr>
+      <tr><td><b>Fórmula</b></td><td><code>lag_bucket{le="5.0"} / lag_count</code> (límite exacto de bucket, sin interpolar)</td></tr>
+      <tr><td><b>Exclusiones</b></td><td>Pendientes aún no cuentan; un procesador detenido lo cubre la alerta <code>PfdProcessorStalled</code></td></tr>
+      <tr><td><b>Por qué 5 s</b></td><td>En estado estable el retraso p95 es ~0.5 s; 5 s da margen para ráfagas y detecta una caída en minutos</td></tr></table></div>
+    <div class="card stat"><span class="lbl">SLO 2 · ventana 7 días</span><div class="big">99<small>%</small></div>
+      <span class="lbl">Presupuesto: 1% de los eventos</span>
+      <p style="font-size:17px">A 20 ev/s: <b>≈ 1 h 40 min</b> de caída total del procesamiento por semana.</p></div></div></div>
+  <div class="tabpane" id="t-la"><div class="grid g-6-4">
+    <div class="card"><table>
+      <tr><td style="width:28%"><b>Población</b></td><td>Solicitudes a <code>/v1/events*</code></td></tr>
+      <tr><td><b>Evento bueno</b></td><td>Duración en el servidor ≤ 250 ms</td></tr>
+      <tr><td><b>Fórmula</b></td><td><code>duration_bucket{le="0.25"} / duration_count</code></td></tr>
+      <tr><td><b>Sin SLO</b></td><td>Se sigue en el dashboard; la latencia percibida depende de la red del cliente, que no controlamos</td></tr></table></div>
+    <div class="card stat"><span class="lbl">Observado (dev, 20 ev/s)</span><div class="big">99.46<small>%</small></div>
+      <span class="lbl">de las solicitudes en menos de 250 ms</span></div></div></div>
+  <div class="callout" style="margin-top:18px">Presupuesto restante = <code>1 − (razón de error en 7 d / razón permitida)</code>. 1 = intacto, 0 = agotado, &lt; 0 = SLO incumplido.</div>
+  <aside class="notes">Usar las pestañas para cada SLI. La frescura es el SLI específico del escenario: mide exactamente lo que P3-5 pide distinguir, espera más procesamiento.
+  Si preguntan por qué 7 días: el proyecto dura semanas, y las mismas reglas funcionan con 30 días cambiando una constante en scripts/gen-slo-rules.py.</aside>
+</section>
+
+<!-- =============================== 17. ALERTAS =============================== -->
+<section class="slide" data-title="Alertas">
+  <div class="kicker">MET-06 · Anexo II · 7</div>
+  <h2>Cuatro alertas con criterio</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3><span class="pill r">SLO</span> PfdIngestAvailabilityBurnRate</h3>
+      <p>5xx &gt; <b>7.2%</b> (14.4 × 0.5%) en 1 h <b>y</b> en 5 min, durante 1 min.</p>
+      <p class="cap">Falso positivo: tráfico muy bajo, donde 1 error de 10 ya es 10% (en dev es informativa).</p></div>
+    <div class="card"><h3><span class="pill r">SLO</span> PfdFreshnessBurnRate</h3>
+      <p>Eventos tardíos &gt; <b>14.4%</b> en 1 h <b>y</b> en 5 min, durante 1 min.</p>
+      <p class="cap">Falso positivo: una prueba de carga muy por encima de la capacidad (pero es consumo real del presupuesto).</p></div>
+    <div class="card"><h3><span class="pill o">Síntoma</span> PfdEventBacklogGrowing</h3>
+      <p>Pendientes &gt; <b>200</b> y en aumento durante 5 min.</p>
+      <p class="cap">200 ≈ 10 s de entrada a 20 ev/s. Falso positivo: una ráfaga larga con capacidad suficiente.</p></div>
+    <div class="card"><h3><span class="pill o">Síntoma</span> PfdProcessorStalled</h3>
+      <p>Hay pendientes y la tasa de procesamiento es <b>0</b> durante 5 min.</p>
+      <p class="cap">Detecta un procesador caído aunque haya poco tráfico, donde la frescura no tiene qué medir.</p></div>
+  </div>
+  <div class="callout" style="margin-top:18px"><b>¿Por qué 14.4× en dos ventanas?</b> A ese ritmo, 1 hora consume ~8.6% del presupuesto semanal. La ventana larga evita alertar por picos;
+    la corta hace que la alerta <b>se apague rápido</b> al mitigar (patrón del SRE Workbook de Google).</div>
+  <aside class="notes">Las cuatro tienen runbook en docs/runbooks/alerts.md con los pasos de diagnóstico. En el experimento se dispararon y resolvieron dos de ellas.</aside>
+</section>
+
+<!-- =============================== 18. DASHBOARD =============================== -->
+<section class="slide" data-title="Dashboard">
+  <div class="kicker">MET-05 · 20 paneles orientados a preguntas</div>
+  <h2>Dashboard durante el experimento</h2>
+  <div class="grid g-4-6" style="margin-top:6px;align-items:start">
+    <div class="grid" style="gap:12px">
+      <div class="card"><h3>Fila SLOs</h3><p>SLI de 7 días y presupuesto restante, con colores por umbral.</p></div>
+      <div class="card"><h3>Q1 · Ingesta</h3><p>Tasa por resultado, rechazos por motivo, latencia p50/p95/p99 (línea de 250 ms), códigos HTTP, quema del SLO.</p></div>
+      <div class="card"><h3>Q2 · Procesamiento</h3><p>Aceptados vs. procesados, backlog, <b>espera vs. procesamiento</b>, quema de frescura, alertas de negocio.</p></div>
+      <div class="card"><h3>Q3 · Capacidad</h3><p>CPU y memoria por pod vs. requests y límites, nodo, reinicios. Abajo: logs de errores y alertas activas.</p></div>
+      <p class="cap">Selector de ambiente (prod/dev) y anotaciones de despliegue. Generado por <code>scripts/gen-dashboard.py</code>.</p>
+    </div>
+    <div style="height:700px;overflow:hidden;border-radius:12px">
+      <img class="shot tall" src="../evidence/2026-11-11-prod/degradation/screenshots/dashboard-experiment-window.png" alt="Dashboard durante el experimento" style="width:100%">
+    </div>
+  </div>
+  <aside class="notes">Clic en la imagen para verla completa. Señalar la fila Q2: el backlog en rampa y la espera que sube a casi 5 minutos, mientras la latencia de la API (Q1) no cambia.</aside>
+</section>
+
+<!-- =============================== 19. TRAZAS Y LOGS =============================== -->
+<section class="slide" data-title="Trazas y logs">
+  <div class="kicker">MET-02 · MET-04 · Anexo II · 3 y 5</div>
+  <h2>Seguir un evento de punta a punta</h2>
+  <div class="grid g-6-4" style="margin-top:8px">
+    <div><img class="shot" src="img/tempo-trace.png" alt="Traza en Tempo">
+      <div class="cap">Traza de un <code>process_batch</code> de <b>7.96 s</b> durante la degradación: 757 spans; cada <code>process_event</code> tarda ~80 ms.</div></div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card"><h3>Propagación asíncrona</h3>
+        <p>La API guarda el <code>traceparent</code> W3C junto al evento. El procesador crea <code>process_event</code> con un <b>span link</b> a esa traza, aunque corra minutos después en otro proceso.</p></div>
+      <div class="card"><h3>Del log a la traza</h3>
+        <div class="term" style="font-size:13.5px">{k8s_namespace_name="pfd-prod"}
+  | json | eventId="<span class="y">&lt;id&gt;</span>"</div>
+        <p style="font-size:16px">Cada línea trae <code>trace_id</code>, y en Grafana un clic abre la traza en Tempo (y viceversa).</p></div>
+      <div class="callout o"><b>Muestreo 100%:</b> cabe a ≤ 20 ev/s. El siguiente paso sería tail sampling (conservar errores y trazas lentas).</div>
+    </div>
+  </div>
+  <aside class="notes">Si piden explicar tiempos: dentro del batch, cada process_event hace BEGIN, consulta de umbrales, posibles INSERT de alertas, UPDATE y COMMIT. Con el retraso inyectado, cada uno pasa de ~10 ms a ~80 ms; 100 eventos por lote dan ~8 s.</aside>
+</section>
+
+<!-- =============================== 20. PRUEBAS P3 =============================== -->
+<section class="slide" data-title="Pruebas P3">
+  <div class="kicker">5.8 · Pruebas reproducibles en prod</div>
+  <h2>13 de 13 verificaciones aprobadas</h2>
+  <div class="grid g-4-6" style="margin-top:8px">
+    <div class="card" style="padding:12px 16px">
+      <table style="font-size:16px">
+        <tr><th>Prueba</th><th>Verificación objetiva</th></tr>
+        <tr><td><b>P3-1</b> ráfaga 1,000</td><td>aceptados +1000 = procesados +1000 · drenado en <b>5 s</b></td></tr>
+        <tr><td><b>P3-2</b> 20 ev/s × 120 s</td><td>2,400 aceptados y procesados · 0 errores HTTP · p95 cliente 132 ms</td></tr>
+        <tr><td><b>P3-3</b> 50 dup + 50 desorden</td><td>duplicados +50 sin re-almacenar · agregados correctos en <b>10/10</b> dispositivos</td></tr>
+        <tr><td><b>P3-4</b> detener procesador</td><td>878 pendientes → <b>0</b> en 10 s sin nueva entrada · procesados = aceptados (1,200)</td></tr>
+      </table>
+      <div class="term" style="font-size:14px;margin-top:12px"><span class="c"># un solo comando, resultados PASS/FAIL</span>
+scripts/p3-tests.sh prod</div>
+      <p class="cap">Las verificaciones comparan <code>/v1/stats</code> antes y después: no dependen de capturas.</p>
+    </div>
+    <div><img class="shot" src="../evidence/2026-11-11-prod/screenshots/p3-tests-terminal.png" alt="Salida de las pruebas P3"></div>
+  </div>
+  <aside class="notes">Destacar P3-4: se escaló el procesador a 0 en medio de la carga; los 878 eventos pendientes se procesaron en 10 s al restaurar, y procesados igual a aceptados demuestra que nada se perdió.
+  Efecto colateral honesto: la ráfaga (65 ev/s, sobre la capacidad de ~30 ev/s) y la detención producen eventos tardíos reales, que consumen el presupuesto de frescura.</aside>
+</section>
+
+<!-- =============================== 21. EXPERIMENTO: HIPÓTESIS =============================== -->
+<section class="slide" data-title="Experimento">
+  <div class="kicker">MET-07 · P3-5 · 5.11</div>
+  <h2>Degradación controlada: menos capacidad en el procesador</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>Hipótesis (escrita antes de ejecutar)</h3>
+      <p>Un retraso de <b>70 ms por evento</b> limita al procesador a ~14 ev/s. Con 20 ev/s de entrada:</p>
+      <ul><li>el backlog crecerá ~6 ev/s</li><li>el retraso superará 5 s en ~1 min</li>
+      <li>se disparará <code>PfdFreshnessBurnRate</code>, luego <code>PfdEventBacklogGrowing</code></li>
+      <li>revertir el procesador drenará el backlog y resolverá ambas</li></ul></div>
+    <div class="card"><h3>Procedimiento reproducible</h3>
+      <div class="pipe" style="flex-direction:column;gap:12px;margin:6px 0 0">
+        <div class="st" style="margin-right:0"><b>1 · Línea base</b><span>3 min a 20 ev/s; sin alertas activas</span></div>
+        <div class="st gate" style="margin-right:0"><b>2 · Inyectar</b><span><code>kubectl set env … PROCESSOR_ARTIFICIAL_DELAY_MS=70</code></span></div>
+        <div class="st" style="margin-right:0"><b>3 · Detectar</b><span>esperar las alertas en Prometheus</span></div>
+        <div class="st" style="margin-right:0"><b>4 · Mitigar y verificar</b><span><code>rollout undo</code> → backlog &lt; 50 → alertas resueltas</span></div>
+      </div>
+      <div class="term" style="font-size:14px;margin-top:12px">scripts/degradation-experiment.sh prod 70</div></div>
+  </div>
+  <div class="callout o" style="margin-top:16px"><b>Un primer intento se abortó</b> antes de inyectar nada: la alerta de frescura seguía activa por las pruebas P3. Sin una línea base limpia no se puede atribuir la causa.</div>
+  <aside class="notes">Usamos el retraso artificial porque es reversible y aislado: no afecta la ingesta, solo la capacidad del procesador, que es justo la "reducción temporal de capacidad" que pide P3-5. No estresamos la CPU de la VM porque afectaría a todos los componentes, incluido el monitoreo.</aside>
+</section>
+
+<!-- =============================== 22. EXPERIMENTO: LÍNEA DE TIEMPO =============================== -->
+<section class="slide" data-title="Línea de tiempo">
+  <div class="kicker">Evidencia · series.csv a 15 s de resolución</div>
+  <h2>Detección en 2 min, recuperación en 51 s</h2>
+  <div class="grid g-6-4" style="margin-top:4px;align-items:start">
+    <div><img class="shot" src="../evidence/2026-11-11-prod/degradation/screenshots/experiment-timeline-es.png" alt="Línea de tiempo del experimento"></div>
+    <div class="card" style="padding:12px 16px">
+      <table style="font-size:16px">
+        <tr><th>t</th><th>Evento</th></tr>
+        <tr><td class="num">0</td><td><b>Falla inyectada</b> (02:03:49 UTC)</td></tr>
+        <tr><td class="num">+29 s</td><td>Salida cae a ~12 ev/s; retraso p95 = 13 s</td></tr>
+        <tr><td class="num">+1m59s</td><td><span class="pill r">firing</span> PfdFreshnessBurnRate</td></tr>
+        <tr><td class="num">+5m59s</td><td><span class="pill o">firing</span> PfdEventBacklogGrowing</td></tr>
+        <tr><td class="num">+6m19s</td><td><b>Mitigación:</b> <code>rollout undo</code> · pico ≈ 2,780 pendientes</td></tr>
+        <tr><td class="num">+7m10s</td><td>Backlog &lt; 50 (≈ 55 ev/s al ponerse al día)</td></tr>
+        <tr><td class="num">+7m14s</td><td><span class="pill g">resolved</span> backlog</td></tr>
+        <tr><td class="num">+11m44s</td><td><span class="pill g">resolved</span> frescura (ventana de 5 min limpia)</td></tr>
+      </table>
+      <p class="cap">La alerta de frescura tarda ~5 min más en apagarse, a propósito: espera a que su ventana corta ya no tenga eventos tardíos.</p>
+    </div>
+  </div>
+  <aside class="notes">Clic en la gráfica para ampliarla. Cuatro paneles: entrada vs. salida, backlog, retraso (escala log) y las barras de las alertas. La franja roja es el período degradado.</aside>
+</section>
+
+<!-- =============================== 23. ANTES / DURANTE / DESPUÉS =============================== -->
+<section class="slide" data-title="Análisis causal">
+  <div class="kicker">Antes / durante / después · mecanismo causal</div>
+  <h2>El problema no fue la latencia por evento: fue la espera</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card" style="padding:12px 18px">
+      <table>
+        <tr><th>Señal</th><th class="num">Antes</th><th class="num">Degradado</th><th class="num">Después</th></tr>
+        <tr><td>Aceptados (ev/s)</td><td class="num">19.9</td><td class="num">19.8</td><td class="num">19.7</td></tr>
+        <tr><td>Procesados (ev/s)</td><td class="num">20.0</td><td class="num bad">12.4</td><td class="num good">20.1</td></tr>
+        <tr><td>Backlog (eventos)</td><td class="num">1</td><td class="num bad">2,677</td><td class="num good">2</td></tr>
+        <tr><td>Retraso p95</td><td class="num">0.50 s</td><td class="num bad">288 s</td><td class="num good">0.50 s</td></tr>
+        <tr><td>Procesamiento medio</td><td class="num">10 ms</td><td class="num bad">80 ms</td><td class="num good">9 ms</td></tr>
+        <tr><td>Tardíos &gt; 5 s (5 min)</td><td class="num">0%</td><td class="num bad">100%</td><td class="num good">0%</td></tr>
+        <tr><td>API p95</td><td class="num">41 ms</td><td class="num">24 ms</td><td class="num">28 ms</td></tr>
+        <tr><td>CPU del procesador</td><td class="num">0.076</td><td class="num">0.060</td><td class="num">0.086</td></tr>
+      </table>
+    </div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card frag"><h3>1 · Capacidad &lt; entrada</h3><p>1 / (70 + 10 ms) ≈ <b>12.4 ev/s</b> &lt; 20 ev/s. La hipótesis decía ~14 porque ignoraba los ~10 ms normales.</p></div>
+      <div class="card frag"><h3>2 · La cola crece sin límite</h3><p>Utilización &gt; 1: el excedente de ~7.4 ev/s se acumula. 7.4 × 365 s ≈ 2,700 pendientes, como se observó.</p></div>
+      <div class="card frag"><h3>3 · La espera domina</h3><p>El procesamiento pasó de 10 a 80 ms, pero el <b>retraso</b> de 0.5 s a minutos. Mientras, la API siguió en 24–41 ms, sin errores ni pérdidas.</p></div>
+      <div class="callout r frag"><b>Lección:</b> la CPU <b>bajó</b> durante el incidente (el procesador dormía). Escalar por CPU no habría ayudado; hay que escalar por backlog o retraso.</div>
+    </div>
+  </div>
+  <aside class="notes">Esta es la diapositiva central para Métricas. El p95 de procesamiento casi no cambió (83 → 97 ms) porque los buckets son 10 ms y 100 ms: ambos valores caen en el mismo. La media (sum/count) sí lo muestra. Es una limitación de instrumentación que reconocemos.</aside>
+</section>
+
+<!-- =============================== 24. LIMITACIONES =============================== -->
+<section class="slide" data-title="Limitaciones">
+  <div class="kicker">Honestidad sobre la evidencia</div>
+  <h2>Limitaciones y lo que haríamos después</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>Limitaciones</h3><ul>
+      <li><b>Ventana de 1 h "cebada":</b> las pruebas P3 la dejaron en 15.5%, así que la alerta disparó en cuanto cruzó la de 5 min. En una hora limpia tardaría ~3–4 min.</li>
+      <li><b>Duplicados en la línea base:</b> el intento abortado usó la misma semilla, y ~1,720 eventos llegaron como duplicados. Bonus: prueba la deduplicación entre corridas.</li>
+      <li><b>Buckets gruesos</b> en la duración de procesamiento: el p95 no distingue 10 de 80 ms.</li>
+      <li><b>p95 interpolado:</b> 288 s es una estimación dentro del bucket (60, 300] s.</li>
+      <li><b>Un nodo, una corrida, carga sintética:</b> muestra el mecanismo, no números de capacidad productivos.</li></ul></div>
+    <div class="card"><h3>Siguientes pasos</h3>
+      <table style="font-size:17px">
+        <tr><td>Buckets de 25/50/75 ms</td><td>p95 sensible entre 10 y 100 ms</td></tr>
+        <tr><td>Autoescalado por backlog (KEDA/HPA)</td><td>la CPU no refleja esta falla</td></tr>
+        <tr><td>Semillas únicas por corrida</td><td>líneas base sin duplicados</td></tr>
+        <tr><td>Alertas de dev informativas</td><td>tráfico bajo vuelve ruidosas las razones</td></tr>
+        <tr><td>Tail sampling de trazas</td><td>retener errores y trazas lentas con menos disco</td></tr>
+      </table>
+      <div class="callout g" style="margin-top:14px">Informe completo: <code>docs/incident-report.md</code> · evidencia cruda: <code>docs/evidence/</code></div></div>
+  </div>
+  <aside class="notes">Mostrar que reconocemos las limitaciones es parte de la rúbrica ("limitaciones" en MET-07 y 5.11).</aside>
+</section>
+
+<!-- =============================== 25. DEMO =============================== -->
+<section class="slide" data-title="Demo en vivo">
+  <div class="kicker">5.12 · 5.13 · Pruebas durante la defensa</div>
+  <h2>Demostración en vivo</h2>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="term" style="font-size:15.5px;white-space:pre-wrap"><span class="c"># 0 · acceso (túnel IAP a la API de K8s)</span>
+scripts/vm.sh tunnel &amp;  export KUBECONFIG=~/.kube/pfd-k3s.yaml
+
+<span class="c"># 1 · ¿qué versión corre?</span>
+curl -s https://api.136-71-37-219.sslip.io/version
+kubectl -n pfd-prod get deploy -o wide
+
+<span class="c"># 2 · detener un Pod: ¿qué se recupera?</span>
+kubectl -n pfd-prod delete pod -l app.kubernetes.io/name=processor
+kubectl -n pfd-prod get pods -w
+
+<span class="c"># 3 · persistencia ante reinicio (COM-03)</span>
+kubectl -n pfd-prod delete pod postgres-0   <span class="c"># y luego /v1/stats igual</span>
+
+<span class="c"># 4 · rollback y verificación</span>
+kubectl -n pfd-prod rollout undo deployment/ingest-api
+kubectl -n pfd-prod rollout history deployment/ingest-api
+
+<span class="c"># 5 · cambio de infraestructura → plan revisable (PR)</span></div>
+    <div class="grid" style="gap:14px;align-content:start">
+      <div class="card"><h3>Diagnóstico guiado</h3><p><code>kubectl describe pod</code> (eventos), <code>kubectl logs --previous</code>, <code>kubectl get events --sort-by=.lastTimestamp</code>, y el dashboard para ver el síntoma.</p></div>
+      <div class="card"><h3>Detener o destruir</h3><p><code>scripts/vm.sh stop</code> (conserva datos) · <code>terraform destroy</code> (todo) · ver <code>docs/runbooks/rebuild.md</code>.</p></div>
+      <div class="card"><h3>Enlaces</h3><p><a href="https://grafana.136-71-37-219.sslip.io/d/pfd-overview" target="_blank">Dashboard</a> ·
+        <a href="https://github.com/renderos1-1/proyecto-final-devops/actions" target="_blank">GitHub Actions</a> ·
+        <a href="https://github.com/renderos1-1/proyecto-final-devops/blob/main/docs/evidence/README.md" target="_blank">Índice de evidencia</a></p></div>
+    </div>
+  </div>
+  <aside class="notes">Tener el túnel abierto y el dashboard cargado antes de empezar. Si el docente detiene un Pod: el Deployment crea otro; las filas que el procesador tenía en "processing" se recuperan al vencer el lease de 60 s; los datos viven en el PVC, no en el Pod.</aside>
+</section>
+
+<!-- =============================== 26. CIERRE =============================== -->
+<section class="slide title" data-title="Cierre">
+  <div class="kicker">Resumen</div>
+  <h1>Correcto, reconstruible<br>y observable</h1>
+  <div class="grid g4" style="margin-top:30px;max-width:1300px">
+    <div><div class="big" style="color:#93c5fd">13/13</div><p style="color:#cbd5e1">verificaciones P3 aprobadas en prod</p></div>
+    <div><div class="big" style="color:#86efac">0</div><p style="color:#cbd5e1">eventos confirmados perdidos (28,492 procesados)</p></div>
+    <div><div class="big" style="color:#fcd34d">2 min</div><p style="color:#cbd5e1">para detectar la degradación con alertas de SLO</p></div>
+    <div><div class="big" style="color:#c4b5fd">~$27</div><p style="color:#cbd5e1">costo estimado del proyecto (tope US$100)</p></div>
+  </div>
+  <p class="sub" style="margin-top:34px;font-size:26px;color:#fff">¿Preguntas?</p>
+  <div class="links">
+    <a href="https://github.com/renderos1-1/proyecto-final-devops" target="_blank">github.com/renderos1-1/proyecto-final-devops ↗</a>
+  </div>
+</section>
+
+</div>
+
+<div id="overview"></div>
+<div id="notes"></div>
+<div id="lightbox"><img alt=""></div>
+<div id="help">← → navegar · O vista general · N notas · F pantalla completa</div>
+<div id="hud">
+  <button id="prev" title="Anterior (←)">←</button>
+  <span id="count">1 / 1</span>
+  <button id="next" title="Siguiente (→)">→</button>
+  <button id="ov" title="Vista general (O)">▦</button>
+  <button id="nt" title="Notas (N)">✎</button>
+  <button id="fs" title="Pantalla completa (F)">⛶</button>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const slides = [...stage.querySelectorAll('.slide')];
+  const progress = document.getElementById('progress');
+  const count = document.getElementById('count');
+  const overview = document.getElementById('overview');
+  const notes = document.getElementById('notes');
+  const lightbox = document.getElementById('lightbox');
+  let cur = 0;
+
+  // scale the fixed 1600x900 stage to the viewport
+  function fit() {
+    const s = Math.min(innerWidth / 1600, innerHeight / 900);
+    stage.style.transform = `translate(-50%,-50%) scale(${s})`;
+  }
+  addEventListener('resize', fit); fit();
+
+  const frags = (i) => [...slides[i].querySelectorAll('.frag')];
+
+  function show(i, revealAll = false) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, k) => { s.classList.toggle('active', k === cur); s.classList.toggle('past', k < cur); });
+    frags(cur).forEach((f) => f.classList.toggle('on', revealAll));
+    progress.style.width = `${((cur + 1) / slides.length) * 100}%`;
+    count.textContent = `${cur + 1} / ${slides.length}`;
+    history.replaceState(null, '', `#${cur + 1}`);
+    const n = slides[cur].querySelector('aside.notes');
+    notes.innerHTML = `<b>${cur + 1}. ${slides[cur].dataset.title || ''}</b><br>${n ? n.innerHTML : '<i>Sin notas.</i>'}`;
+  }
+  function next() {
+    const hidden = frags(cur).filter((f) => !f.classList.contains('on'));
+    if (hidden.length) hidden[0].classList.add('on'); else if (cur < slides.length - 1) show(cur + 1);
+  }
+  function prev() {
+    const shown = frags(cur).filter((f) => f.classList.contains('on'));
+    if (shown.length) shown[shown.length - 1].classList.remove('on'); else if (cur > 0) show(cur - 1, true);
+  }
+
+  // overview grid built from clones
+  function buildOverview() {
+    overview.innerHTML = '';
+    slides.forEach((s, i) => {
+      const t = document.createElement('div'); t.className = 'thumb' + (i === cur ? ' cur' : '');
+      const inner = document.createElement('div'); inner.className = 'inner';
+      const c = s.cloneNode(true); c.classList.add('active'); c.classList.remove('past');
+      inner.appendChild(c); t.appendChild(inner);
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = `${i + 1} · ${s.dataset.title || ''}`; t.appendChild(n);
+      t.onclick = () => { toggleOverview(false); show(i); };
+      overview.appendChild(t);
+      requestAnimationFrame(() => { inner.style.transform = `scale(${t.clientWidth / 1600})`; });
+    });
+  }
+  function toggleOverview(force) {
+    const on = force ?? !overview.classList.contains('on');
+    if (on) buildOverview();
+    overview.classList.toggle('on', on);
+    if (on) overview.querySelector('.cur')?.scrollIntoView({ block: 'center' });
+  }
+  const toggleNotes = () => notes.classList.toggle('on');
+  const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+
+  // lightbox for screenshots
+  stage.addEventListener('click', (e) => {
+    const img = e.target.closest('img.shot'); if (!img) return;
+    lightbox.querySelector('img').src = img.src;
+    lightbox.classList.toggle('tall', img.classList.contains('tall'));
+    lightbox.classList.add('on'); lightbox.scrollTop = 0;
+  });
+  lightbox.onclick = () => lightbox.classList.remove('on');
+
+  // tabs
+  document.querySelectorAll('[data-tabs]').forEach((bar) => {
+    const slide = bar.closest('.slide');
+    bar.querySelectorAll('button').forEach((b) => b.onclick = (e) => {
+      e.stopPropagation();
+      bar.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      slide.querySelectorAll('.tabpane').forEach((p) => p.classList.toggle('on', p.id === b.dataset.tab));
+    });
+  });
+
+  addEventListener('keydown', (e) => {
+    if (lightbox.classList.contains('on')) { if (e.key === 'Escape' || e.key === ' ') lightbox.classList.remove('on'); return; }
+    if (overview.classList.contains('on') && e.key === 'Escape') return toggleOverview(false);
+    switch (e.key) {
+      case 'ArrowRight': case 'PageDown': case ' ': case 'Enter': e.preventDefault(); next(); break;
+      case 'ArrowLeft': case 'PageUp': case 'Backspace': e.preventDefault(); prev(); break;
+      case 'Home': show(0); break;
+      case 'End': show(slides.length - 1, true); break;
+      case 'o': case 'O': toggleOverview(); break;
+      case 'n': case 'N': toggleNotes(); break;
+      case 'f': case 'F': toggleFs(); break;
+      case 'Escape': overview.classList.remove('on'); notes.classList.remove('on'); break;
+    }
+  });
+  document.getElementById('next').onclick = next;
+  document.getElementById('prev').onclick = prev;
+  document.getElementById('ov').onclick = () => toggleOverview();
+  document.getElementById('nt').onclick = toggleNotes;
+  document.getElementById('fs').onclick = toggleFs;
+
+  // swipe on touch devices
+  let x0 = null;
+  addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  addEventListener('touchend', (e) => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) (dx < 0 ? next : prev)(); x0 = null; });
+
+  const start = parseInt(location.hash.slice(1), 10);
+  show(Number.isFinite(start) ? start - 1 : 0, Number.isFinite(start) && start > 1);
+})();
+</script>
+</body>
+</html>
