@@ -14,8 +14,10 @@ the state backend, and secrets (spec 5.6), and each one is listed here.
 | openssl | to generate secrets |
 
 - A GCP project with billing linked (we use `devops-esen`).
-- Terraform authenticates with the gcloud user token:
-  `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` (avoids stale ADC credentials).
+- Terraform uses Application Default Credentials of a project Owner:
+  `gcloud auth application-default login`.
+  If `GOOGLE_APPLICATION_CREDENTIALS` is set in your shell (for example to another tool's service account key),
+  it takes precedence over ADC. Run Terraform as `env -u GOOGLE_APPLICATION_CREDENTIALS terraform ...`.
 
 ## 1. Enable APIs (manual, once)
 
