@@ -100,7 +100,8 @@ resource "google_service_account" "deployer" {
   display_name = "GitHub Actions - build and deploy"
 }
 
-# Who may impersonate whom.
+# Who may impersonate whom. All principals are already restricted to this repository by the
+# provider's attribute_condition; the environment attribute comes from the job's `environment:`.
 resource "google_service_account_iam_member" "tf_plan_wif" {
   service_account_id = google_service_account.tf_plan.name
   role               = "roles/iam.workloadIdentityUser"
@@ -110,14 +111,14 @@ resource "google_service_account_iam_member" "tf_plan_wif" {
 resource "google_service_account_iam_member" "tf_apply_wif" {
   service_account_id = google_service_account.tf_apply.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${local.pool}/subject/repo:${local.repo}:environment:infra-prod"
+  member             = "principalSet://iam.googleapis.com/${local.pool}/attribute.environment/infra-prod"
 }
 
 resource "google_service_account_iam_member" "deployer_wif" {
   for_each           = toset(["dev", "prod"])
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${local.pool}/subject/repo:${local.repo}:environment:${each.key}"
+  member             = "principalSet://iam.googleapis.com/${local.pool}/attribute.environment/${each.key}"
 }
 
 # Image publishing runs on pushes to main (no environment), so it gets a separate,
