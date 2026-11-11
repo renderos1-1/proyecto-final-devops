@@ -72,7 +72,12 @@ send_many() {  # send_many N PREFIX -> prints count per HTTP code (10 requests i
 }
 wait_pending_zero() {
   local t0=$SECONDS p
-  while :; do p=$(stats_json | field pending); [ "${p:-1}" = 0 ] && break; info "pending = $p"; sleep 2; done
+  local s q
+  while :; do
+    s=$(stats_json); p=$(echo "$s" | field pending); q=$(echo "$s" | field processing)
+    [ "${p:-1}" = 0 ] && [ "${q:-1}" = 0 ] && break
+    info "pending = $p · processing = $q"; sleep 1
+  done
   ok "backlog drained to 0 in $((SECONDS - t0)) s"
 }
 
