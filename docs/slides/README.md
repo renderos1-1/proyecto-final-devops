@@ -1,6 +1,11 @@
 # Presentation (Spanish)
 
-Self-contained HTML/CSS/JS deck: open `docs/slides/index.html` in a browser (no server or internet needed;
+| File | What |
+|---|---|
+| `index.html` | **Main deck for the defense**: 9 slides, high level, split between the four presenters (Masciel Fuentes 1, 2, 9 · Axel Renderos 3, 4 · Ariel Alfaro 5, 6 · Benjamin Trabanino 7, 8). Speaker notes (N) contain each presenter's talking points. Visual style: soft-workspace palette (grey shell, white cards, lavender/pink accents, staggered entrances). |
+| `detallado.html` | Detailed 26-slide version, kept as an appendix for in-depth questions. |
+
+Self-contained HTML/CSS/JS decks: open `docs/slides/index.html` in a browser (no server needed; the Inter font loads from Google Fonts when online;
 screenshots are loaded from `docs/evidence/` and `docs/slides/img/`).
 
 | Key | Action |
