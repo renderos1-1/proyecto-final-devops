@@ -7,3 +7,16 @@ resources:
   - loki.yaml
   - tempo.yaml
   - otel-collector.yaml
+  - rules/pfd-slo-rules.yaml
+# Dashboards: ConfigMaps labelled grafana_dashboard are loaded by the Grafana sidecar.
+configMapGenerator:
+  - name: pfd-dashboards
+    namespace: observability
+    files:
+      - dashboards/pfd-overview.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: PFD
