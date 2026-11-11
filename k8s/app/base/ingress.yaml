@@ -4,6 +4,9 @@ metadata:
   name: ingest-api
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
+    # The F5 controller allows one Ingress per host, so cert-manager adds the ACME challenge
+    # path to this Ingress instead of creating a separate solver Ingress (issuance and renewal).
+    acme.cert-manager.io/http01-edit-in-place: "true"
     nginx.org/client-max-body-size: "2m"
 spec:
   ingressClassName: nginx
