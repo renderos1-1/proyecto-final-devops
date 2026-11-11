@@ -8,10 +8,5 @@ resources:
   - ingress.yaml
   - ar-pull-refresher.yaml
   - network-policies.yaml
-images:
-  - name: ingest-api
-    newName: us-central1-docker.pkg.dev/devops-esen/pfd/ingest-api
-    newTag: latest
-  - name: processor
-    newName: us-central1-docker.pkg.dev/devops-esen/pfd/processor
-    newTag: latest
+# Image names stay as placeholders (ingest-api, processor); each overlay maps them to the
+# registry path and git-SHA tag. Mapping here too would make overlay tags silently no-op.

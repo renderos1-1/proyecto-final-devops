@@ -165,6 +165,6 @@ jobs:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8');
-            const summary = (plan.match(/^(Plan:.*|No changes\..*)$/m) || ['(see log)'])[0];
+            const summary = (plan.match(/^(Plan:.*|No changes\..*|Changes to Outputs:)$/m) || ['(see log)'])[0];
             const body = `### Terraform plan\n**${summary}**\n<details><summary>Full plan</summary>\n\n\`\`\`\n${plan.slice(-60000)}\n\`\`\`\n</details>\n\nCommit: ${context.sha}`;
             await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
