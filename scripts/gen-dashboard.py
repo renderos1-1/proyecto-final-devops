@@ -76,6 +76,33 @@ def advance(h: int) -> None:
     _y += h
 
 
+# ------------------------------------------------------------------ volume counter
+row("Volume · events received in the selected time range")
+_vol = 'round(sum{by}(increase(events_received_total{{{ns}{extra}}}[$__range])))'
+panels.append({
+    "type": "stat", "id": nid(), "title": "Events received (selected time range)",
+    "description": "How many events reached the API in the time range chosen in the time picker (top right). "
+                   "Total = accepted + duplicates + rejected (exact: counted by the API pods). For processed totals use /v1/stats.",
+    "datasource": PROM, "gridPos": {"h": 5, "w": 24, "x": 0, "y": _y},
+    "targets": [
+        target(_vol.format(by="", ns=NS, extra=""), "Total received", "A", instant=True),
+        target(_vol.format(by="", ns=NS, extra=',outcome="accepted"'), "Accepted", "B", instant=True),
+        target(_vol.format(by="", ns=NS, extra=',outcome="duplicate"'), "Duplicates", "C", instant=True),
+        target(_vol.format(by="", ns=NS, extra=',outcome="rejected"'), "Rejected", "D", instant=True),
+    ],
+    "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0",
+                                 "thresholds": {"mode": "absolute", "steps": [{"color": "text", "value": None}]}},
+                    "overrides": [
+                        {"matcher": {"id": "byName", "options": "Total received"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#151515"}}]},
+                        {"matcher": {"id": "byName", "options": "Accepted"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+                        {"matcher": {"id": "byName", "options": "Duplicates"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]},
+                        {"matcher": {"id": "byName", "options": "Rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+                    ]},
+    "options": {"colorMode": "value", "graphMode": "none", "textMode": "value_and_name", "orientation": "vertical",
+                "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"]}},
+})
+advance(5)
+
 # ------------------------------------------------------------------ SLO summary
 row("SLOs (7-day window)  ·  availability ≥ 99.5%  ·  freshness ≥ 99% within 5 s")
 stat("Availability SLI (7d)", "Share of ingestion requests (/v1/events*) that did not return 5xx. SLO: 99.5%.",
