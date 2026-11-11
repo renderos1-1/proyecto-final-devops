@@ -275,7 +275,8 @@ test('generator seeds idempotently, bursts, sustains, and verifies duplicates/ol
   assert.equal(burst.summary.sent, 22);
   const sustained = await run('sustained', ['--rate', '4', '--duration', '1']);
   assert.equal(sustained.summary.accepted, 4);
-  assert.ok(sustained.summary.durationSeconds >= 1);
+  // 4 events at 4/s are sent at t = 0, 0.25, 0.5, 0.75 s: correct pacing takes >= (n - 1) / rate, not >= 1 s.
+  assert.ok(sustained.summary.durationSeconds >= 0.7, `paced run too fast: ${sustained.summary.durationSeconds}s`);
   const out = join(outputDirectory, 'report.json');
   for (let i = 0; i < 2; i++) {
     const dupes = await run('dupes-ooo', ['--count', '10', '--duplicates', '5', '--out-of-order', '5', '--batch-size', '4', '--out', out]);
